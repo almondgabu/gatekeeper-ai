@@ -307,7 +307,7 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      <section className="flex-1 p-10">
+      <section className="flex-1 p-10 relative z-10">
         <h1 className="text-4xl font-bold mb-6">Gatekeeper AI Chat</h1>
 
         <div className="space-y-4 mb-6">
@@ -364,7 +364,7 @@ export default function ChatPage() {
 </div>
 
         <textarea
-          className="w-full h-32 bg-slate-900 rounded-2xl p-4 text-white outline-none"
+          className="w-full h-32 bg-slate-900 rounded-2xl p-4 text-white outline-none relative z-20"
           placeholder="Ask Gatekeeper AI anything..."
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -372,7 +372,7 @@ export default function ChatPage() {
 
         <button
           onClick={handleSend}
-          className="mt-4 bg-yellow-500 text-slate-950 px-6 py-3 rounded-xl font-semibold"
+          className="mt-4 bg-yellow-500 text-slate-950 px-6 py-3 rounded-xl font-semibold relative z-20"
         >
           Send
         </button>
