@@ -348,12 +348,7 @@ export default function ChatPage() {
         <div className="mb-4">
           <label className="block text-sm text-slate-400 mb-2">AI Model</label>
 
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            className="bg-slate-900 text-white p-3 rounded-xl border border-slate-700"
-          >
-            <div className="mb-4 flex items-center gap-3">
+<div className="mb-4 flex items-center gap-3">
   <label className="text-sm text-slate-400">
     AI Model
   </label>
@@ -363,11 +358,11 @@ export default function ChatPage() {
     onChange={(e) => setSelectedModel(e.target.value)}
     className="bg-slate-900 text-white p-3 rounded-xl border border-slate-700"
   >
-    <option value="gpt-5-mini">GPT-5 Mini - Fast & Affordable</option>
+    <option value="gpt-5-mini">
+      GPT-5 Mini - Fast & Affordable
+    </option>
   </select>
 </div>
-          </select>
-        </div>
 
         <textarea
           className="w-full h-32 bg-slate-900 rounded-2xl p-4 text-white outline-none"
