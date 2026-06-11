@@ -345,8 +345,7 @@ export default function ChatPage() {
           </div>
         )}
 
-        <div className="mb-4">
-          <label className="block text-sm text-slate-400 mb-2">AI Model</label>
+        
 
 <div className="mb-4 flex items-center gap-3">
   <label className="text-sm text-slate-400">
