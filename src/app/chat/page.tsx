@@ -333,9 +333,16 @@ export default function ChatPage() {
       </aside>
 
       <section className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
-        <h1 className="text-4xl font-bold mb-6">Gatekeeper AI Chat</h1>
+        <div className="mb-8">
+  <h1 className="text-4xl font-bold tracking-tight">
+    Gatekeeper AI
+  </h1>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-10 space-y-4">
+  <p className="text-slate-400 mt-2 text-sm uppercase tracking-widest">
+    Private Intelligence Workspace
+  </p>
+</div>
+        <div className="flex-1 overflow-y-auto px-6 py-8 md:px-12 md:py-10 space-y-8">
           {messages.length === 0 ? (
             <div className="bg-slate-900 rounded-2xl p-6 text-slate-300">
               Hello Almond. How can I help you today?
@@ -344,19 +351,19 @@ export default function ChatPage() {
             messages.map((msg, index) => (
               <div
                 key={index}
-                className={`rounded-2xl p-5 max-w-3xl ${
+                className={`rounded-2xl p-6 max-w-6xl border shadow-lg ${
                   msg.role === "user"
-                    ? "bg-yellow-500 text-slate-950 ml-auto"
-                    : "bg-slate-900 text-slate-200"
+  ? "bg-gradient-to-br from-yellow-400 to-yellow-600 text-slate-950 ml-auto border-yellow-400/30"
+  : "bg-slate-900/80 text-slate-200 border-slate-800"
                 }`}
               >
                 <p className="text-sm font-bold mb-2">
                   {msg.role === "user" ? "Almond" : "Gatekeeper AI"}
                 </p>
 
-                <div className="prose prose-invert max-w-none">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
+                <div className="prose prose-invert max-w-none prose-p:leading-7 prose-p:mb-4 prose-li:mb-2 prose-headings:text-white prose-headings:font-bold prose-strong:text-yellow-300">
+  <ReactMarkdown>{msg.content}</ReactMarkdown>
+</div>
               </div>
             ))
           )}
