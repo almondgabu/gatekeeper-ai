@@ -3,6 +3,7 @@
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useRef, useState } from "react";
+import { Menu, X } from "lucide-react";
 
 type Message = {
   role: "user" | "assistant";
@@ -24,6 +25,8 @@ export default function ChatPage() {
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState("gpt-5-mini");
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   async function loadConversations() {
     const { data, error } = await supabase
@@ -259,8 +262,30 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white flex">
-      <aside className="w-72 bg-slate-900 border-r border-slate-800 p-4">
+    <main className="h-screen bg-slate-950 text-white flex overflow-hidden">
+      <button
+  onClick={() => setSidebarOpen(true)}
+  className="md:hidden fixed top-4 left-4 z-40 bg-slate-800 p-2 rounded-lg"
+>
+  <Menu size={24} />
+</button>
+      <aside
+  className={`
+    fixed md:relative z-50
+    h-screen w-72
+    bg-slate-900 border-r border-slate-800 p-4
+    transform transition-transform duration-300
+    ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+    md:translate-x-0
+  `}
+  
+>
+  <div className="flex justify-end md:hidden mb-4">
+  <button onClick={() => setSidebarOpen(false)}>
+    <X size={24} />
+  </button>
+</div>
+
         <button
           onClick={createNewChat}
           className="w-full bg-yellow-500 text-slate-950 py-3 rounded-xl font-semibold mb-4"
@@ -307,10 +332,10 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      <section className="flex-1 p-10 relative z-10">
+      <section className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
         <h1 className="text-4xl font-bold mb-6">Gatekeeper AI Chat</h1>
 
-        <div className="space-y-4 mb-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-10 space-y-4">
           {messages.length === 0 ? (
             <div className="bg-slate-900 rounded-2xl p-6 text-slate-300">
               Hello Almond. How can I help you today?
