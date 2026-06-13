@@ -4,6 +4,12 @@ import ReactMarkdown from "react-markdown";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
+import {
+  BarChart3,
+  PenSquare,
+  Map,
+  FileText,
+} from "lucide-react";
 
 type Message = {
   role: "user" | "assistant";
@@ -334,13 +340,75 @@ export default function ChatPage() {
 
       <section className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
         <div className="mb-8">
-  <h1 className="text-4xl font-bold tracking-tight">
-    Gatekeeper AI
-  </h1>
+  <div className="mb-8">
+  <div className="flex items-start justify-between gap-4">
+  <div>
+    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-sm mb-3">
+  <span>🧠</span>
+  <span>Knowledge Vault Connected</span>
+</div>
 
-  <p className="text-slate-400 mt-2 text-sm uppercase tracking-widest">
-    Private Intelligence Workspace
-  </p>
+    <p className="text-sm text-slate-400 mb-2">
+      Good afternoon, Almond
+    </p>
+
+    <h1 className="text-4xl font-bold tracking-tight">
+      What would you like to work on today?
+    </h1>
+
+    <p className="text-slate-400 mt-3 text-sm">
+      Ask, analyze, compare, summarize, or create content using Gatekeeper AI.
+    </p>
+  </div>
+
+  <select
+    value={selectedModel}
+    onChange={(e) => setSelectedModel(e.target.value)}
+    className="bg-slate-900 text-white px-4 py-2 rounded-xl border border-slate-700 text-sm"
+  >
+    <option value="gpt-5-mini">
+      GPT-5 Mini
+    </option>
+  </select>
+</div>
+
+
+<div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+
+  <button className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left hover:border-yellow-500/40 hover:bg-slate-800/50 transition">
+    <BarChart3 size={22} className="text-yellow-400 mb-3" />
+    <p className="font-semibold">Compare Models</p>
+    <p className="text-xs text-slate-400 mt-1">
+      Models, costs & options
+    </p>
+  </button>
+
+  <button className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left hover:border-yellow-500/40 hover:bg-slate-800/50 transition">
+    <PenSquare size={22} className="text-yellow-400 mb-3" />
+    <p className="font-semibold">Create Content</p>
+    <p className="text-xs text-slate-400 mt-1">
+      Posts, captions & scripts
+    </p>
+  </button>
+
+  <button className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left hover:border-yellow-500/40 hover:bg-slate-800/50 transition">
+    <Map size={22} className="text-yellow-400 mb-3" />
+    <p className="font-semibold">Analyze Land</p>
+    <p className="text-xs text-slate-400 mt-1">
+      Property & site insights
+    </p>
+  </button>
+
+  <button className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left hover:border-yellow-500/40 hover:bg-slate-800/50 transition">
+    <FileText size={22} className="text-yellow-400 mb-3" />
+    <p className="font-semibold">Summarize</p>
+    <p className="text-xs text-slate-400 mt-1">
+      Documents & notes
+    </p>
+  </button>
+
+</div>  
+</div>
 </div>
         <div className="flex-1 overflow-y-auto px-6 py-8 md:px-12 md:py-10 space-y-8">
           {messages.length === 0 ? (
@@ -351,7 +419,7 @@ export default function ChatPage() {
             messages.map((msg, index) => (
               <div
                 key={index}
-                className={`rounded-2xl p-6 max-w-6xl border shadow-lg ${
+                className={`rounded-2xl p-6 max-w-4xl border shadow-lg ${
                   msg.role === "user"
   ? "bg-gradient-to-br from-yellow-400 to-yellow-600 text-slate-950 ml-auto border-yellow-400/30"
   : "bg-slate-900/80 text-slate-200 border-slate-800"
@@ -377,37 +445,29 @@ export default function ChatPage() {
           </div>
         )}
 
-        
+        <div className="border-t border-slate-800 bg-slate-950 p-4">
+  <div className="flex items-end gap-3 rounded-2xl border border-slate-700 bg-slate-900 p-3">
+    <textarea
+      className="flex-1 resize-none bg-transparent text-white outline-none min-h-[48px] max-h-40"
+      placeholder="Ask Gatekeeper AI anything..."
+      value={message}
+      onChange={(e) => setMessage(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+        }
+      }}
+    />
 
-<div className="mb-4 flex items-center gap-3">
-  <label className="text-sm text-slate-400">
-    AI Model
-  </label>
-
-  <select
-    value={selectedModel}
-    onChange={(e) => setSelectedModel(e.target.value)}
-    className="bg-slate-900 text-white p-3 rounded-xl border border-slate-700"
-  >
-    <option value="gpt-5-mini">
-      GPT-5 Mini - Fast & Affordable
-    </option>
-  </select>
+    <button
+      onClick={handleSend}
+      className="h-11 w-11 rounded-xl bg-yellow-500 text-slate-950 font-bold flex items-center justify-center hover:bg-yellow-400"
+    >
+      ↑
+    </button>
+  </div>
 </div>
-
-        <textarea
-          className="w-full h-32 bg-slate-900 rounded-2xl p-4 text-white outline-none relative z-20"
-          placeholder="Ask Gatekeeper AI anything..."
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-        />
-
-        <button
-          onClick={handleSend}
-          className="mt-4 bg-yellow-500 text-slate-950 px-6 py-3 rounded-xl font-semibold relative z-20"
-        >
-          Send
-        </button>
       </section>
     </main>
   );
