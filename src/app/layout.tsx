@@ -1,5 +1,5 @@
 import "./globals.css";
-import Sidebar from "../components/Sidebar";
+import MobileShell from "../components/MobileShell";
 
 export default function RootLayout({
   children,
@@ -9,12 +9,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-slate-950 text-white">
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 bg-[#020617] text-white min-h-screen">
-            {children}
-          </main>
-        </div>
+        <MobileShell>
+          {children}
+        </MobileShell>
       </body>
     </html>
   );
