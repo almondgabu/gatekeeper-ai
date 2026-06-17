@@ -223,6 +223,16 @@ export default function ChatPage() {
   const pinnedConversations = conversations.filter((c) => Boolean((c as any).pinned));
   const recentConversations = conversations.filter((c) => !Boolean((c as any).pinned));
 
+  // Prevent body scroll when the mobile sidebar/drawer is open
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    document.body.style.overflow = sidebarOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [sidebarOpen]);
+
   async function handleSend() {
     if (!message.trim() || !activeConversationId) return;
 
@@ -294,6 +304,13 @@ export default function ChatPage() {
   <Menu size={24} />
 </button>
 
+      {sidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/60"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
 <div className="hidden md:flex justify-end mb-4">
   <button
     onClick={() => setConversationPanelOpen(!conversationPanelOpen)}
@@ -310,7 +327,7 @@ export default function ChatPage() {
       <aside    
   className={`
     fixed md:relative z-50
-    h-screen w-[85vw] md:w-auto
+    h-screen w-[280px] max-w-[85vw] md:w-auto
     bg-slate-900 border-r border-slate-800 p-4
     transform transition-all duration-300
     ${conversationPanelOpen ? "md:w-80" : "md:w-16"}
