@@ -12,7 +12,7 @@ export default function MobileShell({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-[100dvh] md:h-screen w-full overflow-x-hidden">
       {/* Desktop Sidebar */}
       <div className="hidden md:block">
         <Sidebar />
@@ -49,7 +49,7 @@ export default function MobileShell({
       )}
 
       {/* Main Content */}
-      <main className="flex-1 bg-[#020617] text-white min-h-screen pt-14 md:pt-0">
+      <main className="flex-1 bg-[#020617] text-white min-h-[100dvh] md:h-screen pt-14 md:pt-0">
         {children}
       </main>
     </div>

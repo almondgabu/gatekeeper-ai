@@ -296,7 +296,7 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="h-screen bg-slate-950 text-white flex overflow-hidden">
+    <main className="min-h-[100dvh] md:h-screen w-full bg-slate-950 text-white flex overflow-hidden">
       <button
   onClick={() => setSidebarOpen(true)}
   className="md:hidden fixed top-4 left-4 z-40 bg-slate-800 p-2 rounded-lg"
@@ -335,18 +335,22 @@ export default function ChatPage() {
     md:translate-x-0
   `}
 >
-  <div className="flex justify-end md:hidden mb-4">
-  <button onClick={() => setSidebarOpen(false)}>
-    <X size={24} />
-  </button>
-</div>
+  <div className="md:hidden mb-4">
+    <div className="flex items-center justify-between">
+      <h2 className="text-sm font-semibold">Gatekeeper AI</h2>
+      <button onClick={() => setSidebarOpen(false)} className="p-1">
+        <X size={20} />
+      </button>
+    </div>
+  </div>
 
 
 
         {conversationPanelOpen && (
   <>
-    <div className="mb-4">
-      <input
+    <div className="flex-1 overflow-auto">
+      <div className="mb-4">
+        <input
         type="text"
         placeholder="Search conversations..."
         className="
@@ -585,13 +589,14 @@ export default function ChatPage() {
 
           </div>
         </div>
-      ))}
+      ))} 
     </div>
+  </div>{/* end scrollable list */}
       </>
 )}
       </aside>
 
-<section className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
+<section className="flex-1 flex flex-col min-h-[100dvh] md:h-screen overflow-hidden relative z-10">
   {messages.length === 0 && (
     <div className="mb-8 px-6 pt-8">
       <div className="flex items-start justify-between gap-4">
