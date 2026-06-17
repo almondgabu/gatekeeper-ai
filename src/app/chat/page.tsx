@@ -32,6 +32,7 @@ type Conversation = {
   id: number;
   title: string;
   created_at: string;
+  pinned?: boolean;
 };
 
 export default function ChatPage() {
@@ -219,6 +220,9 @@ export default function ChatPage() {
     });
   }, [messages, loading]);
 
+  const pinnedConversations = conversations.filter((c) => Boolean((c as any).pinned));
+  const recentConversations = conversations.filter((c) => !Boolean((c as any).pinned));
+
   async function handleSend() {
     if (!message.trim() || !activeConversationId) return;
 
@@ -341,50 +345,46 @@ export default function ChatPage() {
       />
     </div>
 
-    <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2">
-      📌 Pinned
-    </h3>
+    {pinnedConversations.length > 0 && (
+      <>
+        <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2">
+          📌 Pinned
+        </h3>
 
-    <h2 className="text-sm text-slate-400 mb-3">
-      Recent
-    </h2>
+        <div className="space-y-2">
+          {pinnedConversations.map((conversation) => (
+            <div
+              key={conversation.id}
+              className={`relative p-3 rounded-xl ${
+                activeConversationId === conversation.id
+                  ? "bg-yellow-500/20 text-yellow-300"
+                  : "bg-slate-800 text-slate-300"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <button
+                  onClick={() => setActiveConversationId(conversation.id)}
+                  className="flex-1 text-left"
+                >
+                  <div className="font-medium truncate">
+                    {conversation.title}
+                  </div>
 
+                  <div className="text-xs text-slate-500 mt-1">
+                    {new Date(conversation.created_at).toLocaleString()}
+                  </div>
+                </button>
 
-
-    <div className="space-y-2">
-  {conversations.map((conversation) => (
-    <div
-      key={conversation.id}
-      className={`relative p-3 rounded-xl ${
-        activeConversationId === conversation.id
-          ? "bg-yellow-500/20 text-yellow-300"
-          : "bg-slate-800 text-slate-300"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <button
-          onClick={() => setActiveConversationId(conversation.id)}
-          className="flex-1 text-left"
-        >
-          <div className="font-medium truncate">
-            {conversation.title}
-          </div>
-
-          <div className="text-xs text-slate-500 mt-1">
-            {new Date(conversation.created_at).toLocaleString()}
-          </div>
-        </button>
-
-        <button
-          onClick={() =>
-            setOpenMenuId(
-              openMenuId === conversation.id ? null : conversation.id
-            )
-          }
-          className="text-slate-400 hover:text-white"
-        >
-          <MoreHorizontal size={16} />
-        </button>
+                <button
+                  onClick={() =>
+                    setOpenMenuId(
+                      openMenuId === conversation.id ? null : conversation.id
+                    )
+                  }
+                  className="text-slate-400 hover:text-white"
+                >
+                  <MoreHorizontal size={16} />
+                </button>
 
 {openMenuId === conversation.id && (
   <div className="
@@ -393,19 +393,40 @@ export default function ChatPage() {
     rounded-xl shadow-xl
     w-48 z-50
   ">
-    <button className="w-full text-left px-4 py-2 hover:bg-slate-800">
-      📌 Pin
+    <button
+      onClick={async () => {
+        const newPinned = !Boolean(conversation.pinned);
+        const { error } = await supabase
+          .from("conversations")
+          .update({ pinned: newPinned })
+          .eq("id", conversation.id);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === conversation.id ? { ...c, pinned: newPinned } : c
+          )
+        );
+        setOpenMenuId(null);
+      }}
+      className="w-full text-left px-4 py-2 hover:bg-slate-800"
+    >
+      {conversation.pinned ? "📌 Unpin" : "📌 Pin"}
     </button>
 
     <button
-  onClick={() => {
-    renameChat(conversation.id, conversation.title);
-    setOpenMenuId(null);
-  }}
-  className="w-full text-left px-4 py-2 hover:bg-slate-800"
->
-  ✏️ Rename
-</button>
+      onClick={() => {
+        renameChat(conversation.id, conversation.title);
+        setOpenMenuId(null);
+      }}
+      className="w-full text-left px-4 py-2 hover:bg-slate-800"
+    >
+      ✏️ Rename
+    </button>
 
     <button className="w-full text-left px-4 py-2 hover:bg-slate-800">
       📂 Move to Project
@@ -416,28 +437,139 @@ export default function ChatPage() {
     </button>
 
     <button
-  onClick={async () => {
-    const confirmDelete = confirm(
-      "Delete this conversation permanently?"
-    );
+      onClick={async () => {
+        const confirmDelete = confirm(
+          "Delete this conversation permanently?"
+        );
 
-    if (!confirmDelete) return;
+        if (!confirmDelete) return;
 
-    await deleteConversation(conversation.id);
+        await deleteConversation(conversation.id);
 
-    setOpenMenuId(null);
-  }}
-  className="w-full text-left px-4 py-2 hover:bg-red-900 text-red-300"
->
-  🗑 Delete
-</button>
+        setOpenMenuId(null);
+      }}
+      className="w-full text-left px-4 py-2 hover:bg-red-900 text-red-300"
+    >
+      🗑 Delete
+    </button>
   </div>
 )}
 
-      </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </>
+    )}
+
+    <h2 className="text-sm text-slate-400 mb-3 mt-4">Recent</h2>
+
+    <div className="space-y-2">
+      {recentConversations.map((conversation) => (
+        <div
+          key={conversation.id}
+          className={`relative p-3 rounded-xl ${
+            activeConversationId === conversation.id
+              ? "bg-yellow-500/20 text-yellow-300"
+              : "bg-slate-800 text-slate-300"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <button
+              onClick={() => setActiveConversationId(conversation.id)}
+              className="flex-1 text-left"
+            >
+              <div className="font-medium truncate">{conversation.title}</div>
+
+              <div className="text-xs text-slate-500 mt-1">
+                {new Date(conversation.created_at).toLocaleString()}
+              </div>
+            </button>
+
+            <button
+              onClick={() =>
+                setOpenMenuId(
+                  openMenuId === conversation.id ? null : conversation.id
+                )
+              }
+              className="text-slate-400 hover:text-white"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+
+{openMenuId === conversation.id && (
+  <div className="
+    absolute right-2 top-10
+    bg-slate-900 border border-slate-700
+    rounded-xl shadow-xl
+    w-48 z-50
+  ">
+    <button
+      onClick={async () => {
+        const newPinned = !Boolean(conversation.pinned);
+        const { error } = await supabase
+          .from("conversations")
+          .update({ pinned: newPinned })
+          .eq("id", conversation.id);
+
+        if (error) {
+          console.error(error);
+          return;
+        }
+
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === conversation.id ? { ...c, pinned: newPinned } : c
+          )
+        );
+        setOpenMenuId(null);
+      }}
+      className="w-full text-left px-4 py-2 hover:bg-slate-800"
+    >
+      {conversation.pinned ? "📌 Unpin" : "📌 Pin"}
+    </button>
+
+    <button
+      onClick={() => {
+        renameChat(conversation.id, conversation.title);
+        setOpenMenuId(null);
+      }}
+      className="w-full text-left px-4 py-2 hover:bg-slate-800"
+    >
+      ✏️ Rename
+    </button>
+
+    <button className="w-full text-left px-4 py-2 hover:bg-slate-800">
+      📂 Move to Project
+    </button>
+
+    <button className="w-full text-left px-4 py-2 hover:bg-slate-800">
+      📦 Archive
+    </button>
+
+    <button
+      onClick={async () => {
+        const confirmDelete = confirm(
+          "Delete this conversation permanently?"
+        );
+
+        if (!confirmDelete) return;
+
+        await deleteConversation(conversation.id);
+
+        setOpenMenuId(null);
+      }}
+      className="w-full text-left px-4 py-2 hover:bg-red-900 text-red-300"
+    >
+      🗑 Delete
+    </button>
+  </div>
+)}
+
+          </div>
+        </div>
+      ))}
     </div>
-  ))}
-</div>
       </>
 )}
       </aside>
