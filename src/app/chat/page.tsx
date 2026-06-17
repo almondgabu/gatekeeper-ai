@@ -324,47 +324,57 @@ export default function ChatPage() {
   </button>
 </div>
 
-      <aside    
-  className={`
-    fixed md:relative z-50
-    h-screen w-[280px] max-w-[85vw] md:w-auto
-    bg-slate-900 border-r border-slate-800 p-4
-    transform transition-all duration-300
-    ${conversationPanelOpen ? "md:w-80" : "md:w-16"}
-    ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-    md:translate-x-0
-  `}
->
-  <div className="md:hidden mb-4">
-    <div className="flex items-center justify-between">
-      <h2 className="text-sm font-semibold">Gatekeeper AI</h2>
-      <button onClick={() => setSidebarOpen(false)} className="p-1">
-        <X size={20} />
-      </button>
-    </div>
-  </div>
+  <aside
+    className={`
+      fixed md:relative z-50
+      h-screen w-[280px] max-w-[85vw] md:w-auto
+      bg-slate-900 border-r border-slate-800 p-0
+      transform transition-all duration-300
+      ${conversationPanelOpen ? "md:w-80" : "md:w-16"}
+      ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+      md:translate-x-0
+    `}
+  >
+    {/* Sticky top area on mobile: header, New Chat, search */}
+    <div className="md:hidden sticky top-0 z-50 bg-slate-900 border-b border-slate-800 px-4 py-3">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold">Gatekeeper AI</h2>
+        <button onClick={() => setSidebarOpen(false)} className="p-1">
+          <X size={20} />
+        </button>
+      </div>
 
+      <div className="mb-3">
+        <button
+          onClick={createNewChat}
+          className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-semibold rounded-xl py-3"
+        >
+          + New Chat
+        </button>
+      </div>
 
-
-        {conversationPanelOpen && (
-  <>
-    <div className="flex-1 overflow-auto">
-      <div className="mb-4">
+      <div className="mb-2">
         <input
-        type="text"
-        placeholder="Search conversations..."
-        className="
-          w-full
-          bg-slate-800
-          border border-slate-700
-          rounded-xl
-          px-4 py-2
-          text-sm
-          text-white
-          placeholder:text-slate-400
-        "
-      />
+          type="text"
+          placeholder="Search conversations..."
+          className="
+            w-full
+            bg-slate-800
+            border border-slate-700
+            rounded-xl
+            px-4 py-2
+            text-sm
+            text-white
+            placeholder:text-slate-400
+          "
+        />
+      </div>
     </div>
+
+    {conversationPanelOpen && (
+      <>
+        {/* Scrollable conversations list only */}
+        <div className="flex-1 overflow-auto px-4 pt-2 pb-6">
 
     {pinnedConversations.length > 0 && (
       <>
@@ -667,7 +677,7 @@ export default function ChatPage() {
   )}
 
   <div className="flex-1 overflow-y-auto">
-    <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+    <div className="max-w-4xl mx-auto px-6 py-8 space-y-8 pb-28">
       {messages.map((msg, index) => (
           <div
             key={index}
@@ -697,7 +707,7 @@ export default function ChatPage() {
     </div>
   )}
 
-  <div className="sticky bottom-0 bg-[#020617] p-4">
+  <div className="sticky bottom-0 bg-[#020617] p-4 z-50">
     <div className="flex items-end gap-3 rounded-2xl border border-slate-700 bg-slate-900 p-3">
       <textarea
         className="flex-1 resize-none bg-transparent text-white outline-none min-h-[48px] max-h-40"

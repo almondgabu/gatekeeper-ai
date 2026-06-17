@@ -19,7 +19,7 @@ export default function MobileShell({
       </div>
 
       {/* Mobile Top Bar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-2 bg-[#020617] border-b border-slate-800">
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between pl-16 pr-4 py-2 bg-[#020617] border-b border-slate-800">
         <h1 className="font-bold text-yellow-400">
           Gatekeeper AI
         </h1>

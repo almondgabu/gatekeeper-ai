@@ -50,7 +50,7 @@ export default function Sidebar() {
       </button>
     </div>
 
-    <div className="mb-10">
+    <div className="mb-10 hidden md:block">
       <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
         <div className="w-11 h-11 rounded-xl bg-yellow-500 flex items-center justify-center">
           <Shield size={22} className="text-black" />
@@ -97,7 +97,7 @@ export default function Sidebar() {
 })}
       </nav>
 
-<div className="mt-6">
+<div className="mt-6 hidden md:block">
   <button
     className="
       w-full
