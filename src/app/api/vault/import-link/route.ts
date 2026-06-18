@@ -11,6 +11,33 @@ const ALLOWED_PREFIXES = [
 const EXTRACTION_ERROR =
   "Could not extract readable text from this shared link. Please copy the conversation manually and upload as .md.";
 
+function stripInvalidUtf16Surrogates(input: string) {
+  let sanitized = "";
+
+  for (let index = 0; index < input.length; index++) {
+    const codeUnit = input.charCodeAt(index);
+
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = input.charCodeAt(index + 1);
+
+      if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+        sanitized += input[index] + input[index + 1];
+        index += 1;
+      }
+
+      continue;
+    }
+
+    if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      continue;
+    }
+
+    sanitized += input[index];
+  }
+
+  return sanitized;
+}
+
 function decodeHtmlEntities(input: string) {
   return input
     .replace(/&nbsp;/g, " ")
@@ -98,14 +125,17 @@ export async function POST(request: Request) {
     }
 
     const html = await response.text();
-    const pageTitle = extractTagContent(html, "title");
-    const extractedText = extractReadableText(html);
+    const pageTitle = stripInvalidUtf16Surrogates(extractTagContent(html, "title"));
+    const extractedText = stripInvalidUtf16Surrogates(extractReadableText(html));
 
     if (!extractedText || extractedText.length < 80) {
       return NextResponse.json({ error: EXTRACTION_ERROR }, { status: 400 });
     }
 
-    const markdown = toMarkdown(title || pageTitle || "Imported ChatGPT Conversation", url, extractedText);
+    const safeTitle = stripInvalidUtf16Surrogates(
+      title || pageTitle || "Imported ChatGPT Conversation"
+    );
+    const markdown = toMarkdown(safeTitle, url, extractedText);
     const buffer = Buffer.from(markdown, "utf8");
     const filename = `${title.replace(/[^a-zA-Z0-9._-]+/g, "-") || "imported-chatgpt-link"}.md`;
 
