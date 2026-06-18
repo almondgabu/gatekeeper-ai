@@ -9,29 +9,42 @@ type ProjectOption = {
   name: string;
 };
 
+type VaultDocument = {
+  id: string;
+  filename: string | null;
+  storage_path: string;
+  status: string | null;
+  created_at?: string | null;
+  file_size?: number | null;
+  project_id?: string | null;
+  projectName?: string | null;
+};
+
 export default function VaultPage() {
 
   const [uploading, setUploading] = useState(false);
-  const [files, setFiles] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<VaultDocument[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const filteredFiles = files.filter((file) =>
-  file.name.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredDocuments = documents.filter((document) =>
+  (document.filename || document.storage_path).toLowerCase().includes(searchTerm.toLowerCase())
   );
-  const totalStorageUsed = files.reduce((total, file) => {
-  return total + (file.metadata?.size || 0);
+  const totalStorageUsed = documents.reduce((total, document) => {
+  return total + (document.file_size || 0);
 }, 0);
 
 const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
   const loadFiles = async () => {
-  const { data, error } = await supabase.storage
-    .from("knowledge-vault")
-    .list();
+  const response = await fetch("/api/vault/documents", { cache: "no-store" });
+  const result = await response.json();
 
-  if (!error && data) {
-    setFiles(data);
+  if (!response.ok) {
+    console.error(result.error || "Failed to load vault documents.");
+    return;
   }
+
+  setDocuments((result.documents ?? []) as VaultDocument[]);
 };
   const loadProjects = async () => {
   const response = await fetch("/api/projects", { cache: "no-store" });
@@ -80,27 +93,33 @@ const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
   event.target.value = "";
 };
 
-const deleteFile = async (fileName: string) => {
+const deleteFile = async (documentId: string, storagePath: string) => {
   const confirmDelete = confirm("Delete this file?");
 
   if (!confirmDelete) return;
 
-  const { error } = await supabase.storage
-    .from("knowledge-vault")
-    .remove([fileName]);
+  const response = await fetch("/api/vault/documents", {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ documentId, storagePath }),
+  });
 
-  if (error) {
-    alert(error.message);
+  const result = await response.json();
+
+  if (!response.ok) {
+    alert(result.error || "Delete failed.");
   } else {
     alert("File deleted.");
     await loadFiles();
   }
 };
   
-const downloadFile = async (fileName: string) => {
+const downloadFile = async (storagePath: string, filename: string | null) => {
   const { data, error } = await supabase.storage
     .from("knowledge-vault")
-    .download(fileName);
+    .download(storagePath);
 
   if (error) {
     alert(error.message);
@@ -111,7 +130,7 @@ const downloadFile = async (fileName: string) => {
 
   const link = document.createElement("a");
   link.href = url;
-  link.download = fileName;
+  link.download = filename || storagePath;
   link.click();
 
   URL.revokeObjectURL(url);
@@ -201,7 +220,7 @@ useEffect(() => {
                 Documents
               </p>
               <p className="text-2xl font-bold text-white">
-  {totalStorageUsedMB} MB
+  {documents.length}
 </p>
             </div>
 
@@ -210,7 +229,7 @@ useEffect(() => {
                 Storage Used
               </p>
               <p className="text-2xl font-bold text-yellow-400">
-                0 MB
+                {totalStorageUsedMB} MB
               </p>
             </div>
 
@@ -243,15 +262,15 @@ useEffect(() => {
 
         <div className="space-y-3">
 
-          {files.length === 0 ? (
+          {documents.length === 0 ? (
   <p className="text-slate-400 text-sm">
     No documents uploaded yet.
   </p>
 ) : (
-  filteredFiles.map((file) => (
+  filteredDocuments.map((document) => (
     <div
-  key={file.name}
-  className="p-4 rounded-xl bg-slate-800 flex items-center justify-between"
+  key={document.id}
+  className="flex flex-col gap-3 rounded-xl bg-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between"
 >
   <div className="flex items-center gap-3 min-w-0">
     <FileText
@@ -260,32 +279,39 @@ useEffect(() => {
     />
 
     <div className="min-w-0">
-      <p className="truncate text-white">
-        {file.name}
-      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="truncate text-white">
+          {document.filename || document.storage_path}
+        </p>
+        <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${document.project_id ? "bg-yellow-500/15 text-yellow-300" : "bg-slate-700 text-slate-200"}`}>
+          {document.projectName || "Global Vault"}
+        </span>
+      </div>
 
       <p className="text-xs text-slate-400">
-  {file.metadata?.size
-    ? `${(file.metadata.size / 1024 / 1024).toFixed(2)} MB`
+  {typeof document.file_size === "number"
+    ? `${(document.file_size / 1024 / 1024).toFixed(2)} MB`
     : "Unknown size"}
   {" • "}
-  {file.created_at
-    ? new Date(file.created_at).toLocaleDateString()
+  {document.created_at
+    ? new Date(document.created_at).toLocaleDateString()
     : "No date"}
+  {" • "}
+  {document.status || "unknown"}
 </p>
     </div>
   </div>
 
 <div className="flex items-center gap-2">
   <button
-    onClick={() => downloadFile(file.name)}
+    onClick={() => downloadFile(document.storage_path, document.filename)}
     className="p-2 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-yellow-500/10 transition"
   >
     <Download size={18} />
   </button>
 
   <button
-    onClick={() => deleteFile(file.name)}
+    onClick={() => deleteFile(document.id, document.storage_path)}
     className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
   >
     <Trash2 size={18} />
