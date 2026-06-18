@@ -78,13 +78,21 @@ export default function ProjectDetailPage({
       return;
     }
 
-    const { error } = await supabase
-      .from("documents")
-      .update({ project_id: null })
-      .eq("id", documentId);
+    const response = await fetch("/api/vault/documents", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        documentId,
+        projectId: null,
+      }),
+    });
 
-    if (error) {
-      alert(error.message);
+    const result = await response.json();
+
+    if (!response.ok) {
+      alert(result.error || "Failed to remove document from project.");
       return;
     }
 

@@ -18,6 +18,15 @@ type ProjectRow = {
   name: string;
 };
 
+function withProjectName(document: VaultDocumentRow, projects: ProjectRow[]) {
+  const projectNameById = new Map(projects.map((project) => [project.id, project.name]));
+
+  return {
+    ...document,
+    projectName: document.project_id ? projectNameById.get(document.project_id) ?? null : null,
+  };
+}
+
 export async function GET() {
   const [{ data: documents, error: documentsError }, { data: projects, error: projectsError }] =
     await Promise.all([
@@ -36,15 +45,50 @@ export async function GET() {
     return NextResponse.json({ error: projectsError.message }, { status: 500 });
   }
 
-  const projectNameById = new Map(
-    ((projects ?? []) as ProjectRow[]).map((project) => [project.id, project.name])
-  );
+  return NextResponse.json({
+    documents: ((documents ?? []) as VaultDocumentRow[]).map((document) =>
+      withProjectName(document, (projects ?? []) as ProjectRow[])
+    ),
+  });
+}
+
+export async function PATCH(request: Request) {
+  const body = await request.json();
+  const documentId = typeof body?.documentId === "string" ? body.documentId.trim() : "";
+  const projectIdValue = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+  const projectId = projectIdValue ? projectIdValue : null;
+
+  if (!documentId) {
+    return NextResponse.json({ error: "documentId required" }, { status: 400 });
+  }
+
+  const { data: updatedDocument, error: updateError } = await supabaseAdmin
+    .from("documents")
+    .update({ project_id: projectId })
+    .eq("id", documentId)
+    .select("id, filename, storage_path, status, created_at, file_size, project_id")
+    .single();
+
+  if (updateError || !updatedDocument) {
+    return NextResponse.json(
+      { error: updateError?.message ?? "failed to update document" },
+      { status: 500 }
+    );
+  }
+
+  const projects = projectId
+    ? await supabaseAdmin.from("projects").select("id, name").eq("id", projectId)
+    : { data: [], error: null };
+
+  if (projects.error) {
+    return NextResponse.json({ error: projects.error.message }, { status: 500 });
+  }
 
   return NextResponse.json({
-    documents: ((documents ?? []) as VaultDocumentRow[]).map((document) => ({
-      ...document,
-      projectName: document.project_id ? projectNameById.get(document.project_id) ?? null : null,
-    })),
+    document: withProjectName(
+      updatedDocument as VaultDocumentRow,
+      (projects.data ?? []) as ProjectRow[]
+    ),
   });
 }
 

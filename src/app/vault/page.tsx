@@ -25,6 +25,9 @@ export default function VaultPage() {
   const [uploading, setUploading] = useState(false);
   const [documents, setDocuments] = useState<VaultDocument[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [documentProjectSelections, setDocumentProjectSelections] = useState<Record<string, string>>({});
+  const [savingDocumentId, setSavingDocumentId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const filteredDocuments = documents.filter((document) =>
@@ -45,6 +48,11 @@ const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
   }
 
   setDocuments((result.documents ?? []) as VaultDocument[]);
+  setDocumentProjectSelections(
+    Object.fromEntries(
+      ((result.documents ?? []) as VaultDocument[]).map((document) => [document.id, document.project_id ?? ""])
+    )
+  );
 };
   const loadProjects = async () => {
   const response = await fetch("/api/projects", { cache: "no-store" });
@@ -80,12 +88,12 @@ const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
     const result = await response.json();
 
     if (!response.ok) {
-      alert(result.error || "Upload failed.");
+      setNotice({ type: "error", message: result.error || "Upload failed." });
     } else {
       const scopeLabel = selectedProjectId
         ? projects.find((project) => project.id === selectedProjectId)?.name || "selected project"
         : "Global Vault";
-      alert(`Upload successful! Scope: ${scopeLabel}`);
+      setNotice({ type: "success", message: `Upload successful! Scope: ${scopeLabel}` });
       await loadFiles();
     }
 
@@ -109,11 +117,51 @@ const deleteFile = async (documentId: string, storagePath: string) => {
   const result = await response.json();
 
   if (!response.ok) {
-    alert(result.error || "Delete failed.");
+    setNotice({ type: "error", message: result.error || "Delete failed." });
   } else {
-    alert("File deleted.");
+    setNotice({ type: "success", message: "File deleted." });
     await loadFiles();
   }
+};
+
+const saveDocumentProject = async (document: VaultDocument) => {
+  const nextProjectId = documentProjectSelections[document.id] ?? "";
+  setSavingDocumentId(document.id);
+
+  const response = await fetch("/api/vault/documents", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      documentId: document.id,
+      projectId: nextProjectId || null,
+    }),
+  });
+
+  const result = await response.json();
+  setSavingDocumentId(null);
+
+  if (!response.ok) {
+    setNotice({ type: "error", message: result.error || "Failed to update document project." });
+    return;
+  }
+
+  const updatedDocument = result.document as VaultDocument;
+  setDocuments((currentDocuments) =>
+    currentDocuments.map((currentDocument) =>
+      currentDocument.id === updatedDocument.id ? updatedDocument : currentDocument
+    )
+  );
+  setDocumentProjectSelections((currentSelections) => ({
+    ...currentSelections,
+    [updatedDocument.id]: updatedDocument.project_id ?? "",
+  }));
+
+  setNotice({
+    type: "success",
+    message: `Document moved to ${updatedDocument.projectName || "Global Vault"}.`,
+  });
 };
   
 const downloadFile = async (storagePath: string, filename: string | null) => {
@@ -150,6 +198,12 @@ useEffect(() => {
         <p className="text-slate-400 mt-2">
           Your private second brain. Store, organize and retrieve knowledge.
         </p>
+
+        {notice && (
+          <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${notice.type === "success" ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-red-500/30 bg-red-500/10 text-red-300"}`}>
+            {notice.message}
+          </div>
+        )}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -302,20 +356,51 @@ useEffect(() => {
     </div>
   </div>
 
-<div className="flex items-center gap-2">
-  <button
-    onClick={() => downloadFile(document.storage_path, document.filename)}
-    className="p-2 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-yellow-500/10 transition"
-  >
-    <Download size={18} />
-  </button>
+<div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[260px]">
+  <div className="flex items-center gap-2">
+    <select
+      value={documentProjectSelections[document.id] ?? document.project_id ?? ""}
+      onChange={(e) =>
+        setDocumentProjectSelections((currentSelections) => ({
+          ...currentSelections,
+          [document.id]: e.target.value,
+        }))
+      }
+      disabled={savingDocumentId === document.id}
+      className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+    >
+      <option value="">Global Vault</option>
+      {projects.map((project) => (
+        <option key={project.id} value={project.id}>
+          {project.name}
+        </option>
+      ))}
+    </select>
 
-  <button
-    onClick={() => deleteFile(document.id, document.storage_path)}
-    className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
-  >
-    <Trash2 size={18} />
-  </button>
+    <button
+      onClick={() => saveDocumentProject(document)}
+      disabled={savingDocumentId === document.id || (documentProjectSelections[document.id] ?? document.project_id ?? "") === (document.project_id ?? "")}
+      className="rounded-lg bg-yellow-500 px-3 py-2 text-sm font-medium text-black transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {savingDocumentId === document.id ? "Saving..." : document.project_id ? "Save" : "Assign"}
+    </button>
+  </div>
+
+  <div className="flex items-center justify-end gap-2">
+    <button
+      onClick={() => downloadFile(document.storage_path, document.filename)}
+      className="p-2 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-yellow-500/10 transition"
+    >
+      <Download size={18} />
+    </button>
+
+    <button
+      onClick={() => deleteFile(document.id, document.storage_path)}
+      className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
+    >
+      <Trash2 size={18} />
+    </button>
+  </div>
 </div>
 </div>
   ))
