@@ -13,6 +13,7 @@ import {
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import ConversationList from "./ConversationList";
 
 
 const menuItems = [
@@ -23,7 +24,7 @@ const menuItems = [
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   const [collapsed, setCollapsed] = useState(false);
@@ -31,96 +32,88 @@ export default function Sidebar() {
   return (
   <aside
   className={`
-    min-h-screen bg-[#0A1023]
+    h-full bg-[#0A1023]
     border-r border-slate-800
     transition-all duration-300
-    ${collapsed ? "w-20 p-3" : "w-72 p-6"}
+    ${collapsed ? "w-20 p-3" : "w-64 p-4"}
   `}
 >
-    <div className="flex justify-end mb-4">
+    <div className="hidden md:flex justify-end mb-4">
       <button
         onClick={() => setCollapsed(!collapsed)}
         className="text-slate-400 hover:text-white"
       >
-        {collapsed ? (
-          <PanelLeftOpen size={20} />
-        ) : (
-          <PanelLeftClose size={20} />
-        )}
+        {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
       </button>
     </div>
 
-    <div className="mb-10 hidden md:block">
-      <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
+    {/* Sticky top: header + New Chat + mobile search */}
+    <div className="sticky top-0 z-40 bg-[#0A1023] -mx-4 px-4 py-4 md:py-0">
+      <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"} mb-3`}>
         <div className="w-11 h-11 rounded-xl bg-yellow-500 flex items-center justify-center">
           <Shield size={22} className="text-black" />
         </div>
 
         {!collapsed && (
           <div>
-            <h1 className="text-xl font-bold text-[#D4AF37]">
-              Gatekeeper AI
-            </h1>
-
-            <p className="text-xs text-slate-400">
-              Your Knowledge. Your Advantage.
-            </p>
+            <h1 className="text-lg font-bold text-[#D4AF37]">Gatekeeper AI</h1>
+            <p className="text-xs text-slate-400">Your Knowledge. Your Advantage.</p>
           </div>
         )}
       </div>
+
+      <div className="md:hidden mb-3">
+        <Link
+          href="/chat?new=1"
+          className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-semibold rounded-xl py-3 transition flex items-center justify-center gap-2"
+          onClick={() => onNavigate?.()}
+        >
+          <Plus size={18} />
+          {!collapsed && <span>New Chat</span>}
+        </Link>
+      </div>
+
+      {/* mobile search (sticky with header) */}
+      <div className="md:hidden mb-2">
+        <input
+          type="text"
+          placeholder="Search conversations..."
+          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white placeholder:text-slate-400"
+        />
+      </div>
     </div>
 
-      <nav className="space-y-3">
+      <nav className="space-y-2 text-sm">
  {menuItems.map((item) => {
   const isActive = pathname === item.href;
   const Icon = item.icon;
 
   return (
-<Link
-  key={item.href}
-  href={item.href}
-  className={`group flex items-center ${
-    collapsed ? "justify-center" : "gap-3"
-  } px-4 py-3 rounded-xl transition-all duration-200 ${
-    isActive
-      ? "bg-gradient-to-r from-yellow-500/20 to-yellow-600/10 text-yellow-300 border border-yellow-500/20"
-      : "text-slate-300 hover:bg-slate-800/60"
-  }`}
->
-  <Icon size={18} />
+    <Link
+      key={item.href}
+      href={item.href}
+      className={`group flex items-center ${
+        collapsed ? "justify-center" : "gap-3"
+      } px-3 py-2.5 rounded-xl transition-all duration-200 ${
+        isActive
+          ? "bg-gradient-to-r from-yellow-500/20 to-yellow-600/10 text-yellow-300 border border-yellow-500/20"
+          : "text-slate-300 hover:bg-slate-800/60"
+      }`}
+      onClick={() => onNavigate?.()}
+    >
+      <Icon size={18} />
 
-  {!collapsed && (
-  <span>{item.name}</span>
-)}
-</Link>
+      {!collapsed && <span>{item.name}</span>}
+    </Link>
   );
 })}
+
       </nav>
 
-<div className="mt-6 hidden md:block">
-  <button
-    className="
-      w-full
-      bg-yellow-500
-      hover:bg-yellow-400
-      text-slate-950
-      font-semibold
-      rounded-xl
-      py-3
-      transition
-      flex items-center justify-center gap-2
-    "
-  >
-    <Plus size={18} />
-
-    {!collapsed && (
-      <span>New Chat</span>
-    )}
-  </button>
-
-
-  
-</div>
+    {/* Conversation list (scrollable) */}
+    <div className="mt-5 flex-1 overflow-auto px-2 md:px-0">
+      <ConversationList showSearch={false} />
+    </div>
 
     </aside>
   );

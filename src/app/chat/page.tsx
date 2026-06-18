@@ -1,8 +1,9 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { supabase } from "@/lib/supabase";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import {
   Menu,
   X,
@@ -21,6 +22,8 @@ import {
   Star,
   MoreHorizontal,
 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import ConversationList from "@/components/ConversationList";
 
 
 type Message = {
@@ -35,17 +38,18 @@ type Conversation = {
   pinned?: boolean;
 };
 
-export default function ChatPage() {
+function ChatPageContent() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState("gpt-5-mini");
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  
   const [conversationPanelOpen, setConversationPanelOpen] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
 
@@ -208,6 +212,39 @@ export default function ChatPage() {
     initializeChat();
   }, []);
 
+  // Handle lightweight URL triggers: ?new=1 to create a chat, ?conversation=<id> to open
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const newFlag = searchParams?.get("new");
+    const conv = searchParams?.get("conversation");
+    const projectIdParam = searchParams?.get("projectId");
+    const parsedProjectId = projectIdParam ? Number(projectIdParam) : NaN;
+
+    setActiveProjectId(Number.isNaN(parsedProjectId) ? null : parsedProjectId);
+
+    const baseChatUrl = Number.isNaN(parsedProjectId)
+      ? "/chat"
+      : `/chat?projectId=${parsedProjectId}`;
+
+    if (newFlag) {
+      createNewChat().then(() => router.replace(baseChatUrl));
+      return;
+    }
+
+    if (conv) {
+      const id = Number(conv);
+      if (!Number.isNaN(id)) {
+        setActiveConversationId(id);
+        loadMessages(id);
+      }
+      // remove param from URL
+      router.replace(baseChatUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   useEffect(() => {
     if (activeConversationId) {
       loadMessages(activeConversationId);
@@ -223,15 +260,7 @@ export default function ChatPage() {
   const pinnedConversations = conversations.filter((c) => Boolean((c as any).pinned));
   const recentConversations = conversations.filter((c) => !Boolean((c as any).pinned));
 
-  // Prevent body scroll when the mobile sidebar/drawer is open
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    document.body.style.overflow = sidebarOpen ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [sidebarOpen]);
+  
 
   async function handleSend() {
     if (!message.trim() || !activeConversationId) return;
@@ -262,6 +291,7 @@ export default function ChatPage() {
       body: JSON.stringify({
         message: userMessage.content,
         model: selectedModel,
+        projectId: activeProjectId,
       }),
     });
 
@@ -296,335 +326,72 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="min-h-[100dvh] md:h-screen w-full bg-slate-950 text-white flex overflow-hidden">
-      <button
-  onClick={() => setSidebarOpen(true)}
-  className="md:hidden fixed top-4 left-4 z-40 bg-slate-800 p-2 rounded-lg"
->
-  <Menu size={24} />
-</button>
-
-      {sidebarOpen && (
-        <div
-          className="md:hidden fixed inset-0 z-40 bg-black/60"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-<div className="hidden md:flex justify-end mb-4">
-  <button
-    onClick={() => setConversationPanelOpen(!conversationPanelOpen)}
-    className="text-slate-400 hover:text-white"
-  >
-    {conversationPanelOpen ? (
-      <PanelLeftClose size={20} />
-    ) : (
-      <PanelLeftOpen size={20} />
-    )}
-  </button>
-</div>
-
+    <main className="flex h-full min-h-0 w-full overflow-hidden bg-slate-950 text-white">
   <aside
     className={`
-      fixed md:relative z-50
-      h-screen w-[280px] max-w-[85vw] md:w-auto
-      bg-slate-900 border-r border-slate-800 p-0
+      hidden md:block relative z-20
+      h-full w-[280px] max-w-[85vw] md:w-auto shrink-0
+      bg-slate-900 border-r border-slate-800 p-0 overflow-hidden
       transform transition-all duration-300
-      ${conversationPanelOpen ? "md:w-80" : "md:w-16"}
-      ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+      ${conversationPanelOpen ? "md:w-72" : "md:w-14"}
       md:translate-x-0
     `}
   >
-    {/* Sticky top area on mobile: header, New Chat, search */}
-    <div className="md:hidden sticky top-0 z-50 bg-slate-900 border-b border-slate-800 px-4 py-3">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold">Gatekeeper AI</h2>
-        <button onClick={() => setSidebarOpen(false)} className="p-1">
-          <X size={20} />
-        </button>
-      </div>
-
+    <div className="p-3 h-full flex flex-col">
       <div className="mb-3">
-        <button
-          onClick={createNewChat}
-          className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-semibold rounded-xl py-3"
-        >
-          + New Chat
-        </button>
+        <h2 className="text-sm font-semibold">Conversations</h2>
       </div>
 
-      <div className="mb-2">
-        <input
-          type="text"
-          placeholder="Search conversations..."
-          className="
-            w-full
-            bg-slate-800
-            border border-slate-700
-            rounded-xl
-            px-4 py-2
-            text-sm
-            text-white
-            placeholder:text-slate-400
-          "
+      <div className="flex-1 overflow-auto px-0 pt-0 pb-4">
+        <ConversationList
+          activeConversationId={activeConversationId || undefined}
+          onSelect={async (id) => {
+            setActiveConversationId(id);
+            await loadMessages(id);
+          }}
         />
       </div>
     </div>
+  </aside>
 
-    {conversationPanelOpen && (
-      <>
-        {/* Scrollable conversations list only */}
-        <div className="flex-1 overflow-auto px-4 pt-2 pb-6">
-
-    {pinnedConversations.length > 0 && (
-      <>
-        <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2">
-          📌 Pinned
-        </h3>
-
-        <div className="space-y-2">
-          {pinnedConversations.map((conversation) => (
-            <div
-              key={conversation.id}
-              className={`relative p-3 rounded-xl ${
-                activeConversationId === conversation.id
-                  ? "bg-yellow-500/20 text-yellow-300"
-                  : "bg-slate-800 text-slate-300"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <button
-                  onClick={() => setActiveConversationId(conversation.id)}
-                  className="flex-1 text-left"
-                >
-                  <div className="font-medium truncate">
-                    {conversation.title}
-                  </div>
-
-                  <div className="text-xs text-slate-500 mt-1">
-                    {new Date(conversation.created_at).toLocaleString()}
-                  </div>
-                </button>
-
-                <button
-                  onClick={() =>
-                    setOpenMenuId(
-                      openMenuId === conversation.id ? null : conversation.id
-                    )
-                  }
-                  className="text-slate-400 hover:text-white"
-                >
-                  <MoreHorizontal size={16} />
-                </button>
-
-{openMenuId === conversation.id && (
-  <div className="
-    absolute right-2 top-10
-    bg-slate-900 border border-slate-700
-    rounded-xl shadow-xl
-    w-48 z-50
-  ">
-    <button
-      onClick={async () => {
-        const newPinned = !Boolean(conversation.pinned);
-        const { error } = await supabase
-          .from("conversations")
-          .update({ pinned: newPinned })
-          .eq("id", conversation.id);
-
-        if (error) {
-          console.error(error);
-          return;
-        }
-
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === conversation.id ? { ...c, pinned: newPinned } : c
-          )
-        );
-        setOpenMenuId(null);
-      }}
-      className="w-full text-left px-4 py-2 hover:bg-slate-800"
-    >
-      {conversation.pinned ? "📌 Unpin" : "📌 Pin"}
-    </button>
-
-    <button
-      onClick={() => {
-        renameChat(conversation.id, conversation.title);
-        setOpenMenuId(null);
-      }}
-      className="w-full text-left px-4 py-2 hover:bg-slate-800"
-    >
-      ✏️ Rename
-    </button>
-
-    <button className="w-full text-left px-4 py-2 hover:bg-slate-800">
-      📂 Move to Project
-    </button>
-
-    <button className="w-full text-left px-4 py-2 hover:bg-slate-800">
-      📦 Archive
-    </button>
-
-    <button
-      onClick={async () => {
-        const confirmDelete = confirm(
-          "Delete this conversation permanently?"
-        );
-
-        if (!confirmDelete) return;
-
-        await deleteConversation(conversation.id);
-
-        setOpenMenuId(null);
-      }}
-      className="w-full text-left px-4 py-2 hover:bg-red-900 text-red-300"
-    >
-      🗑 Delete
-    </button>
-  </div>
-)}
-
-              </div>
-            </div>
-          ))}
-        </div>
-      </>
-    )}
-
-    <h2 className="text-sm text-slate-400 mb-3 mt-4">Recent</h2>
-
-    <div className="space-y-2">
-      {recentConversations.map((conversation) => (
-        <div
-          key={conversation.id}
-          className={`relative p-3 rounded-xl ${
-            activeConversationId === conversation.id
-              ? "bg-yellow-500/20 text-yellow-300"
-              : "bg-slate-800 text-slate-300"
-          }`}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <button
-              onClick={() => setActiveConversationId(conversation.id)}
-              className="flex-1 text-left"
-            >
-              <div className="font-medium truncate">{conversation.title}</div>
-
-              <div className="text-xs text-slate-500 mt-1">
-                {new Date(conversation.created_at).toLocaleString()}
-              </div>
-            </button>
-
-            <button
-              onClick={() =>
-                setOpenMenuId(
-                  openMenuId === conversation.id ? null : conversation.id
-                )
-              }
-              className="text-slate-400 hover:text-white"
-            >
-              <MoreHorizontal size={16} />
-            </button>
-
-{openMenuId === conversation.id && (
-  <div className="
-    absolute right-2 top-10
-    bg-slate-900 border border-slate-700
-    rounded-xl shadow-xl
-    w-48 z-50
-  ">
-    <button
-      onClick={async () => {
-        const newPinned = !Boolean(conversation.pinned);
-        const { error } = await supabase
-          .from("conversations")
-          .update({ pinned: newPinned })
-          .eq("id", conversation.id);
-
-        if (error) {
-          console.error(error);
-          return;
-        }
-
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === conversation.id ? { ...c, pinned: newPinned } : c
-          )
-        );
-        setOpenMenuId(null);
-      }}
-      className="w-full text-left px-4 py-2 hover:bg-slate-800"
-    >
-      {conversation.pinned ? "📌 Unpin" : "📌 Pin"}
-    </button>
-
-    <button
-      onClick={() => {
-        renameChat(conversation.id, conversation.title);
-        setOpenMenuId(null);
-      }}
-      className="w-full text-left px-4 py-2 hover:bg-slate-800"
-    >
-      ✏️ Rename
-    </button>
-
-    <button className="w-full text-left px-4 py-2 hover:bg-slate-800">
-      📂 Move to Project
-    </button>
-
-    <button className="w-full text-left px-4 py-2 hover:bg-slate-800">
-      📦 Archive
-    </button>
-
-    <button
-      onClick={async () => {
-        const confirmDelete = confirm(
-          "Delete this conversation permanently?"
-        );
-
-        if (!confirmDelete) return;
-
-        await deleteConversation(conversation.id);
-
-        setOpenMenuId(null);
-      }}
-      className="w-full text-left px-4 py-2 hover:bg-red-900 text-red-300"
-    >
-      🗑 Delete
-    </button>
-  </div>
-)}
-
-          </div>
-        </div>
-      ))} 
+<section className="relative z-10 flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-slate-950">
+  <div className="hidden shrink-0 items-center justify-between border-b border-slate-800 bg-slate-950/90 px-4 py-3 backdrop-blur md:flex">
+    <div>
+      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Gatekeeper AI</p>
+      <h1 className="text-sm font-semibold text-slate-200">Chat</h1>
+      {activeProjectId && (
+        <p className="mt-1 text-xs text-yellow-400">Project-scoped retrieval active</p>
+      )}
     </div>
-  </div>{/* end scrollable list */}
-      </>
-)}
-      </aside>
 
-<section className="flex-1 flex flex-col min-h-[100dvh] md:h-screen overflow-hidden relative z-10">
+    <button
+      onClick={() => setConversationPanelOpen(!conversationPanelOpen)}
+      className="rounded-lg border border-slate-700 bg-slate-900 p-2 text-slate-400 hover:text-white"
+    >
+      {conversationPanelOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+    </button>
+  </div>
+
+  <div className="flex-1 min-h-0 overflow-y-auto">
+    <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 py-5 md:px-6 md:py-6">
   {messages.length === 0 && (
-    <div className="mb-8 px-6 pt-8">
+    <div className="mb-6 md:mb-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-sm mb-3">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-green-500/20 bg-green-500/10 px-3 py-1 text-xs text-green-400">
             <span>🧠</span>
             <span>Knowledge Vault Connected</span>
           </div>
 
-          <p className="text-sm text-slate-400 mb-2">
+          <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">
             Good afternoon, Almond
           </p>
 
-          <h1 className="text-4xl font-bold tracking-tight">
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
             What would you like to work on today?
           </h1>
 
-          <p className="text-slate-400 mt-3 text-sm">
+          <p className="mt-2 max-w-xl text-sm text-slate-400">
             Ask, analyze, compare, summarize, or create content using Gatekeeper AI.
           </p>
         </div>
@@ -632,7 +399,7 @@ export default function ChatPage() {
         <select
           value={selectedModel}
           onChange={(e) => setSelectedModel(e.target.value)}
-          className="bg-slate-900 text-white px-4 py-2 rounded-xl border border-slate-700 text-sm"
+          className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
         >
           <option value="gpt-5-mini">
             GPT-5 Mini
@@ -640,35 +407,35 @@ export default function ChatPage() {
         </select>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
-        <button className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left hover:border-yellow-500/40 hover:bg-slate-800/50 transition">
-          <BarChart3 size={22} className="text-yellow-400 mb-3" />
-          <p className="font-semibold">Compare Models</p>
-          <p className="text-xs text-slate-400 mt-1">
+      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <button className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5 text-left transition hover:border-yellow-500/40 hover:bg-slate-800/50">
+          <BarChart3 size={18} className="mb-2 text-yellow-400" />
+          <p className="text-sm font-semibold">Compare Models</p>
+          <p className="mt-1 text-xs text-slate-400">
             Models, costs & options
           </p>
         </button>
 
-        <button className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left hover:border-yellow-500/40 hover:bg-slate-800/50 transition">
-          <PenSquare size={22} className="text-yellow-400 mb-3" />
-          <p className="font-semibold">Create Content</p>
-          <p className="text-xs text-slate-400 mt-1">
+        <button className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5 text-left transition hover:border-yellow-500/40 hover:bg-slate-800/50">
+          <PenSquare size={18} className="mb-2 text-yellow-400" />
+          <p className="text-sm font-semibold">Create Content</p>
+          <p className="mt-1 text-xs text-slate-400">
             Posts, captions & scripts
           </p>
         </button>
 
-        <button className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left hover:border-yellow-500/40 hover:bg-slate-800/50 transition">
-          <Map size={22} className="text-yellow-400 mb-3" />
-          <p className="font-semibold">Analyze Land</p>
-          <p className="text-xs text-slate-400 mt-1">
+        <button className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5 text-left transition hover:border-yellow-500/40 hover:bg-slate-800/50">
+          <Map size={18} className="mb-2 text-yellow-400" />
+          <p className="text-sm font-semibold">Analyze Land</p>
+          <p className="mt-1 text-xs text-slate-400">
             Property & site insights
           </p>
         </button>
 
-        <button className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left hover:border-yellow-500/40 hover:bg-slate-800/50 transition">
-          <FileText size={22} className="text-yellow-400 mb-3" />
-          <p className="font-semibold">Summarize</p>
-          <p className="text-xs text-slate-400 mt-1">
+        <button className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5 text-left transition hover:border-yellow-500/40 hover:bg-slate-800/50">
+          <FileText size={18} className="mb-2 text-yellow-400" />
+          <p className="text-sm font-semibold">Summarize</p>
+          <p className="mt-1 text-xs text-slate-400">
             Documents & notes
           </p>
         </button>
@@ -676,23 +443,22 @@ export default function ChatPage() {
     </div>
   )}
 
-  <div className="flex-1 overflow-y-auto">
-    <div className="max-w-4xl mx-auto px-6 py-8 space-y-8 pb-28">
+    <div className="space-y-4 pb-24 md:pb-28">
       {messages.map((msg, index) => (
           <div
             key={index}
-            className={`rounded-2xl p-6 max-w-5xl border shadow-lg ${
+            className={`max-w-3xl rounded-2xl border p-4 text-sm shadow-sm md:p-5 md:text-[15px] ${
               msg.role === "user"
-  ? "max-w-xl bg-gradient-to-br from-yellow-400 to-yellow-600 text-slate-950 ml-auto border-yellow-400/30"
-                : "bg-slate-900/80 text-slate-200 border-slate-800"
+  ? "ml-auto max-w-lg bg-gradient-to-br from-yellow-400 to-yellow-600 text-slate-950 border-yellow-400/30"
+                : "border-slate-800 bg-slate-900/80 text-slate-200"
             }`}
           >
-            <p className="text-sm font-bold mb-2">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-inherit/80">
               {msg.role === "user" ? "Almond" : "Gatekeeper AI"}
             </p>
 
-            <div className="prose prose-invert max-w-none prose-p:leading-7 prose-p:mb-4 prose-li:mb-2 prose-headings:text-white prose-headings:font-bold prose-strong:text-yellow-300">
-              <ReactMarkdown>{msg.content}</ReactMarkdown>
+            <div className="prose prose-sm prose-invert max-w-none prose-p:mb-3 prose-p:leading-6 prose-li:mb-1 prose-headings:text-white prose-headings:font-semibold prose-strong:text-yellow-300 prose-table:block prose-table:w-full prose-table:overflow-hidden prose-table:rounded-xl prose-table:border prose-table:border-slate-700 prose-thead:bg-slate-800 prose-th:border prose-th:border-slate-700 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:text-xs prose-th:font-semibold prose-th:text-slate-200 prose-td:border prose-td:border-slate-800 prose-td:px-3 prose-td:py-2 prose-td:text-sm prose-td:text-slate-300">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
             </div>
           </div>
       ))}
@@ -700,17 +466,19 @@ export default function ChatPage() {
       <div ref={messagesEndRef} />
     </div>
   </div>
+  </div>
 
-  {loading && (
-    <div className="bg-slate-800 rounded-2xl p-4 mx-6 mb-4 text-slate-400">
-      Gatekeeper AI is thinking...
-    </div>
-  )}
+  <div className="sticky bottom-0 z-20 shrink-0 border-t border-slate-800 bg-[#020617]/95 px-4 py-3 backdrop-blur">
+    <div className="mx-auto w-full max-w-3xl">
+      {loading && (
+        <div className="mb-3 rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-400">
+          Gatekeeper AI is thinking...
+        </div>
+      )}
 
-  <div className="sticky bottom-0 bg-[#020617] p-4 z-50">
     <div className="flex items-end gap-3 rounded-2xl border border-slate-700 bg-slate-900 p-3">
       <textarea
-        className="flex-1 resize-none bg-transparent text-white outline-none min-h-[48px] max-h-40"
+        className="min-h-[40px] max-h-36 flex-1 resize-none bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
         placeholder="Ask Gatekeeper AI anything..."
         value={message}
         onChange={(e) => setMessage(e.target.value)}
@@ -724,13 +492,22 @@ export default function ChatPage() {
 
       <button
         onClick={handleSend}
-        className="h-11 w-11 rounded-xl bg-yellow-500 text-slate-950 font-bold flex items-center justify-center hover:bg-yellow-400"
+        className="flex h-10 w-10 items-center justify-center rounded-xl bg-yellow-500 font-bold text-slate-950 hover:bg-yellow-400"
       >
         ↑
       </button>
     </div>
+    </div>
   </div>
 </section>
     </main>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<main className="flex h-full min-h-0 w-full items-center justify-center bg-slate-950 text-sm text-slate-400">Loading chat...</main>}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

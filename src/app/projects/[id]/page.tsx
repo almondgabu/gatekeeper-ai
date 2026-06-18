@@ -1,6 +1,7 @@
 "use client";
 import { use, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 import {
   FileText,
   MessageSquare,
@@ -21,9 +22,11 @@ export default function ProjectDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const [vaultFiles, setVaultFiles] = useState<any[]>([]);
   const [showVaultFiles, setShowVaultFiles] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<any[]>([]);
+  const [projectId, setProjectId] = useState<number | null>(null);
 const loadAttachedFiles = async () => {
   const { data, error } = await supabase
     .from("project_files")
@@ -39,10 +42,32 @@ const loadAttachedFiles = async () => {
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+
+const loadProject = async () => {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id, name")
+    .eq("name", projectName)
+    .single();
+
+  if (!error && data) {
+    setProjectId(data.id);
+  }
+};
+
 useEffect(() => {
+  loadProject();
   loadVaultFiles();
   loadAttachedFiles();
 }, []);
+
+const openProjectChat = () => {
+  if (!projectId) {
+    return;
+  }
+
+  router.push(`/chat?projectId=${projectId}&new=1`);
+};
 
 
 const attachFileToProject = async (fileName: string) => {
@@ -141,7 +166,11 @@ const loadVaultFiles = async () => {
           </p>
         </div>
 
-        <button className="flex items-center gap-2 px-6 py-3 rounded-xl bg-yellow-500 text-black font-semibold hover:bg-yellow-400 transition">
+        <button
+          onClick={openProjectChat}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl bg-yellow-500 text-black font-semibold hover:bg-yellow-400 transition disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!projectId}
+        >
           <Sparkles size={18} />
           Ask Project AI
         </button>
@@ -282,6 +311,8 @@ const loadVaultFiles = async () => {
       title="Conversations"
       desc="Related chats and project discussions."
       button="Open Chat"
+      onClick={openProjectChat}
+      disabled={!projectId}
     />
 
     <SideCard
@@ -329,7 +360,7 @@ function StatCard({ icon, title, value, desc, color }: any) {
   );
 }
 
-function SideCard({ icon, title, desc, button, color }: any) {
+function SideCard({ icon, title, desc, button, color, onClick, disabled }: any) {
   const colors: any = {
     purple: "text-purple-400",
     green: "text-green-400",
@@ -351,7 +382,11 @@ function SideCard({ icon, title, desc, button, color }: any) {
         {desc}
       </p>
 
-      <button className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-700 text-slate-200 hover:border-yellow-500/40">
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-700 text-slate-200 hover:border-yellow-500/40 disabled:cursor-not-allowed disabled:opacity-60"
+      >
         {button}
         <ChevronRight size={16} />
       </button>

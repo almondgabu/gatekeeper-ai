@@ -8,7 +8,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-slate-950 text-white">
+      <body className="min-h-screen bg-slate-950 text-white antialiased">
         <MobileShell>
           {children}
         </MobileShell>

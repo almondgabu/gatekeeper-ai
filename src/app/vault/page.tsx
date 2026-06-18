@@ -34,16 +34,22 @@ const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
 
   setUploading(true);
 
-  const { error } = await supabase.storage
-    .from("knowledge-vault")
-    .upload(`${Date.now()}-${file.name}`, file);
+    const formData = new FormData();
+    formData.append("file", file);
 
-  if (error) {
-    alert(error.message);
-  } else {
-    alert("Upload successful!");
-    await loadFiles();
-  }
+    const response = await fetch("/api/vault/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      alert(result.error || "Upload failed.");
+    } else {
+      alert("Upload successful!");
+      await loadFiles();
+    }
 
   setUploading(false);
 };
