@@ -3,6 +3,8 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
+const TEMP_CONFIRMATION_PASSWORD = "782185";
+
 type ProjectRow = {
   id: string;
   name: string;
@@ -115,4 +117,150 @@ export async function POST(request: Request) {
       documentCount: 0,
     },
   });
+}
+
+export async function PATCH(request: Request) {
+  const body = await request.json();
+  const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const password = typeof body?.password === "string" ? body.password.trim() : "";
+
+  if (!projectId || !name) {
+    return NextResponse.json({ error: "projectId and name required" }, { status: 400 });
+  }
+
+  if (password !== TEMP_CONFIRMATION_PASSWORD) {
+    return NextResponse.json({ error: "Invalid confirmation password." }, { status: 403 });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("projects")
+    .update({ name })
+    .eq("id", projectId)
+    .select("id, name, created_at")
+    .single();
+
+  if (error || !data) {
+    return NextResponse.json({ error: error?.message ?? "failed to rename project" }, { status: 500 });
+  }
+
+  const { count, error: countError } = await supabaseAdmin
+    .from("documents")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId);
+
+  if (countError) {
+    return NextResponse.json({ error: countError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    project: {
+      ...(data as ProjectRow),
+      documentCount: count ?? 0,
+    },
+  });
+}
+
+export async function DELETE(request: Request) {
+  const body = await request.json();
+  const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+  const password = typeof body?.password === "string" ? body.password.trim() : "";
+
+  if (!projectId) {
+    return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  }
+
+  if (password !== TEMP_CONFIRMATION_PASSWORD) {
+    return NextResponse.json({ error: "Invalid confirmation password." }, { status: 403 });
+  }
+
+  const { data: documents, error: documentsError } = await supabaseAdmin
+    .from("documents")
+    .select("id")
+    .eq("project_id", projectId);
+
+  if (documentsError) {
+    return NextResponse.json({ error: documentsError.message }, { status: 500 });
+  }
+
+  const { data: conversations, error: conversationsError } = await supabaseAdmin
+    .from("conversations")
+    .select("id")
+    .eq("project_id", projectId);
+
+  if (conversationsError) {
+    return NextResponse.json({ error: conversationsError.message }, { status: 500 });
+  }
+
+  const documentIds = (documents ?? []).map((document) => document.id).filter(Boolean);
+  const conversationIds = (conversations ?? []).map((conversation) => conversation.id).filter(Boolean);
+
+  const { error: memoriesError } = await supabaseAdmin
+    .from("project_memories")
+    .delete()
+    .eq("project_id", projectId);
+
+  if (memoriesError) {
+    return NextResponse.json({ error: memoriesError.message }, { status: 500 });
+  }
+
+  if (documentIds.length > 0) {
+    const { error: indexingError } = await supabaseAdmin
+      .from("indexing_status")
+      .delete()
+      .in("document_id", documentIds);
+
+    if (indexingError) {
+      return NextResponse.json({ error: indexingError.message }, { status: 500 });
+    }
+
+    const { error: chunkError } = await supabaseAdmin
+      .from("document_chunks")
+      .delete()
+      .in("document_id", documentIds);
+
+    if (chunkError) {
+      return NextResponse.json({ error: chunkError.message }, { status: 500 });
+    }
+
+    const { error: projectDocumentsError } = await supabaseAdmin
+      .from("documents")
+      .delete()
+      .eq("project_id", projectId);
+
+    if (projectDocumentsError) {
+      return NextResponse.json({ error: projectDocumentsError.message }, { status: 500 });
+    }
+  }
+
+  if (conversationIds.length > 0) {
+    const { error: messagesError } = await supabaseAdmin
+      .from("messages")
+      .delete()
+      .in("conversation_id", conversationIds);
+
+    if (messagesError) {
+      return NextResponse.json({ error: messagesError.message }, { status: 500 });
+    }
+
+    const { error: projectConversationsError } = await supabaseAdmin
+      .from("conversations")
+      .delete()
+      .eq("project_id", projectId);
+
+    if (projectConversationsError) {
+      return NextResponse.json({ error: projectConversationsError.message }, { status: 500 });
+    }
+  }
+
+  const { error: projectError } = await supabaseAdmin
+    .from("projects")
+    .delete()
+    .eq("id", projectId);
+
+  if (projectError) {
+    return NextResponse.json({ error: projectError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }
