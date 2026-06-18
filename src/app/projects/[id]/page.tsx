@@ -7,11 +7,13 @@ import { use, useEffect, useState } from "react";
 import {
   Brain,
   ChevronRight,
+  Copy,
   Download,
   Eye,
   FileText,
   FolderOpen,
   MessageSquare,
+  RotateCw,
   Star,
   Trash2,
 } from "lucide-react";
@@ -72,6 +74,7 @@ export default function ProjectDetailPage({
   const [projectBrief, setProjectBrief] = useState("");
   const [briefError, setBriefError] = useState<string | null>(null);
   const [generatingBrief, setGeneratingBrief] = useState(false);
+  const [copiedBrief, setCopiedBrief] = useState(false);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMemories, setLoadingMemories] = useState(false);
@@ -235,6 +238,22 @@ export default function ProjectDetailPage({
     setProjectBrief(typeof result.brief === "string" ? result.brief : "");
   }
 
+  async function copyProjectBrief() {
+    if (!projectBrief) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(projectBrief);
+      setCopiedBrief(true);
+      window.setTimeout(() => {
+        setCopiedBrief(false);
+      }, 2000);
+    } catch {
+      setBriefError("Failed to copy project brief.");
+    }
+  }
+
   const latestDocument = documents[0];
   const documentCount = project?.documentCount ?? documents.length;
   const normalizedMemorySearch = memorySearch.trim().toLowerCase();
@@ -281,15 +300,17 @@ export default function ProjectDetailPage({
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={generateProjectBrief}
-            disabled={generatingBrief || !projectId}
-            className="flex items-center justify-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-6 py-3 font-semibold text-green-200 transition hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Brain size={18} />
-            {generatingBrief ? "Generating..." : "Generate Project Brief"}
-          </button>
+          {!projectBrief && (
+            <button
+              type="button"
+              onClick={generateProjectBrief}
+              disabled={generatingBrief || !projectId}
+              className="flex items-center justify-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-6 py-3 font-semibold text-green-200 transition hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Brain size={18} />
+              {generatingBrief ? "Generating..." : "Generate Project Brief"}
+            </button>
+          )}
 
           <Link
             href={`/projects/${projectId}/chat`}
@@ -349,14 +370,39 @@ export default function ProjectDetailPage({
 
       {(generatingBrief || briefError || projectBrief) && (
         <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
-          <div className="mb-4 flex items-center gap-3">
-            <Brain className="text-green-400" size={24} />
-            <div>
-              <h2 className="text-2xl font-semibold">Project Brief</h2>
-              <p className="text-sm text-slate-400">
-                AI-generated summary across project memories, documents, and recent conversations.
-              </p>
+          <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="flex items-center gap-3">
+              <Brain className="text-green-400" size={24} />
+              <div>
+                <h2 className="text-2xl font-semibold">Project Brief</h2>
+                <p className="text-sm text-slate-400">
+                  AI-generated summary across project memories, documents, and recent conversations.
+                </p>
+              </div>
             </div>
+
+            {projectBrief && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={copyProjectBrief}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-slate-500 hover:text-white"
+                >
+                  <Copy size={16} />
+                  {copiedBrief ? "Copied" : "Copy Brief"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={generateProjectBrief}
+                  disabled={generatingBrief || !projectId}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm font-semibold text-green-200 transition hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <RotateCw size={16} className={generatingBrief ? "animate-spin" : undefined} />
+                  {generatingBrief ? "Generating..." : "Regenerate Brief"}
+                </button>
+              </div>
+            )}
           </div>
 
           {generatingBrief && (
