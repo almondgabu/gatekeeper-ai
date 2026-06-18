@@ -31,6 +31,14 @@ type ProjectDocument = {
   file_size?: number | null;
 };
 
+type ProjectConversation = {
+  id: number;
+  title: string;
+  created_at: string;
+  project_id?: string | null;
+  messageCount?: number;
+};
+
 export default function ProjectDetailPage({
   params,
 }: {
@@ -41,7 +49,9 @@ export default function ProjectDetailPage({
 
   const [project, setProject] = useState<ProjectRecord | null>(null);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [conversations, setConversations] = useState<ProjectConversation[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingProject, setLoadingProject] = useState(true);
 
   async function loadProject() {
@@ -66,9 +76,31 @@ export default function ProjectDetailPage({
     setDocuments((result.documents ?? []) as ProjectDocument[]);
   }
 
+  async function loadConversations() {
+    if (!projectId) {
+      setLoadingConversations(false);
+      return;
+    }
+
+    const response = await fetch(`/api/conversations?projectId=${projectId}`, {
+      cache: "no-store",
+    });
+    const result = await response.json();
+    setLoadingConversations(false);
+
+    if (!response.ok) {
+      console.error(result.error || "failed to load conversations");
+      return;
+    }
+
+    setConversations((result ?? []) as ProjectConversation[]);
+  }
+
   useEffect(() => {
     setLoadingDocuments(true);
+    setLoadingConversations(true);
     loadProject();
+    loadConversations();
   }, [projectId]);
 
   async function unassignDocument(documentId: string) {
@@ -97,6 +129,7 @@ export default function ProjectDetailPage({
     }
 
     await loadProject();
+    await loadConversations();
   }
 
   async function openFile(storagePath: string) {
@@ -207,6 +240,7 @@ export default function ProjectDetailPage({
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,4fr)_320px]">
+        <div className="space-y-6">
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
           <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
@@ -298,6 +332,55 @@ export default function ProjectDetailPage({
             )}
           </div>
         </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
+          <div className="mb-6 flex items-center gap-3">
+            <MessageSquare className="text-yellow-400" size={24} />
+            <div>
+              <h2 className="text-2xl font-semibold">Recent Conversations</h2>
+              <p className="text-sm text-slate-400">
+                Only conversations saved under this project appear here.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-dashed border-slate-700 p-6 md:p-8">
+            {loadingConversations || loadingProject ? (
+              <p className="text-sm text-slate-400">Loading project conversations...</p>
+            ) : conversations.length === 0 ? (
+              <p className="text-sm text-slate-400">No conversations yet</p>
+            ) : (
+              <div className="space-y-3">
+                {conversations.map((conversation) => (
+                  <div
+                    key={conversation.id}
+                    className="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950 p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-white">{conversation.title || `Conversation #${conversation.id}`}</p>
+                      <p className="mt-2 text-xs text-slate-400">
+                        {conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : "No date"}
+                        {" • "}
+                        {typeof conversation.messageCount === "number"
+                          ? `${conversation.messageCount} message${conversation.messageCount === 1 ? "" : "s"}`
+                          : "Message count unavailable"}
+                      </p>
+                    </div>
+
+                    <Link
+                      href={`/chat?conversationId=${conversation.id}&projectId=${encodeURIComponent(projectId)}`}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+                    >
+                      Open
+                      <ChevronRight size={16} />
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+        </div>
 
         <aside className="space-y-6">
           <SideCard

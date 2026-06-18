@@ -18,5 +18,41 @@ export async function GET(request: Request) {
     );
   }
 
-  return Response.json(data);
+  const conversations = data ?? [];
+  const conversationIds = conversations.map((conversation) => conversation.id).filter(Boolean);
+
+  if (conversationIds.length === 0) {
+    return Response.json([]);
+  }
+
+  const { data: messages, error: messagesError } = await supabase
+    .from("messages")
+    .select("conversation_id")
+    .in("conversation_id", conversationIds);
+
+  if (messagesError) {
+    return Response.json(
+      { error: messagesError.message },
+      { status: 500 }
+    );
+  }
+
+  const messageCountByConversationId = new Map<number, number>();
+
+  for (const message of messages ?? []) {
+    const conversationId = Number(message.conversation_id);
+    if (!Number.isNaN(conversationId)) {
+      messageCountByConversationId.set(
+        conversationId,
+        (messageCountByConversationId.get(conversationId) ?? 0) + 1
+      );
+    }
+  }
+
+  return Response.json(
+    conversations.map((conversation) => ({
+      ...conversation,
+      messageCount: messageCountByConversationId.get(Number(conversation.id)) ?? 0,
+    }))
+  );
 }

@@ -236,7 +236,7 @@ function ChatPageContent() {
 
   useEffect(() => {
     const newFlag = searchParams?.get("new");
-    const conv = searchParams?.get("conversation");
+    const conv = searchParams?.get("conversationId") || searchParams?.get("conversation");
     setActiveProjectId(scopedProjectId);
 
     const baseChatUrl = !scopedProjectId
