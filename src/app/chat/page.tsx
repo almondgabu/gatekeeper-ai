@@ -54,6 +54,8 @@ type Notice = {
   message: string;
 };
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function ChatPageContent() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -444,19 +446,33 @@ function ChatPageContent() {
 
   useEffect(() => {
     async function loadActiveProjectName(projectId: string) {
-      const { data, error } = await supabase
-        .from("projects")
-        .select("name")
-        .eq("id", projectId)
-        .single();
-
-      if (error) {
-        console.error(error);
+      if (!projectId.trim() || !UUID_PATTERN.test(projectId)) {
         setActiveProjectName(null);
         return;
       }
 
-      setActiveProjectName(data?.name || null);
+      const response = await fetch(`/api/projects?id=${encodeURIComponent(projectId)}`, {
+        cache: "no-store",
+      });
+
+      if (response.status === 404) {
+        setActiveProjectName(null);
+        return;
+      }
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setActiveProjectName(null);
+
+        if (process.env.NODE_ENV === "development") {
+          console.warn("Failed to load active project name", result.error || result);
+        }
+
+        return;
+      }
+
+      setActiveProjectName(result.project?.name || null);
     }
 
     if (!scopedProjectId) {
