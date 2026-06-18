@@ -39,6 +39,15 @@ type ProjectConversation = {
   messageCount?: number;
 };
 
+type ProjectMemory = {
+  id: string;
+  memory_type: string;
+  title: string;
+  content: string;
+  importance: number;
+  created_at: string;
+};
+
 export default function ProjectDetailPage({
   params,
 }: {
@@ -50,8 +59,10 @@ export default function ProjectDetailPage({
   const [project, setProject] = useState<ProjectRecord | null>(null);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [conversations, setConversations] = useState<ProjectConversation[]>([]);
+  const [memories, setMemories] = useState<ProjectMemory[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(false);
+  const [loadingMemories, setLoadingMemories] = useState(false);
   const [loadingProject, setLoadingProject] = useState(true);
 
   async function loadProject() {
@@ -96,11 +107,33 @@ export default function ProjectDetailPage({
     setConversations((result ?? []) as ProjectConversation[]);
   }
 
+  async function loadMemories() {
+    if (!projectId) {
+      setLoadingMemories(false);
+      return;
+    }
+
+    const response = await fetch(`/api/project-memories?projectId=${projectId}`, {
+      cache: "no-store",
+    });
+    const result = await response.json();
+    setLoadingMemories(false);
+
+    if (!response.ok) {
+      console.error(result.error || "failed to load project memories");
+      return;
+    }
+
+    setMemories((result.memories ?? []) as ProjectMemory[]);
+  }
+
   useEffect(() => {
     setLoadingDocuments(true);
     setLoadingConversations(true);
+    setLoadingMemories(true);
     loadProject();
     loadConversations();
+    loadMemories();
   }, [projectId]);
 
   async function unassignDocument(documentId: string) {
@@ -165,6 +198,16 @@ export default function ProjectDetailPage({
 
   const latestDocument = documents[0];
   const documentCount = project?.documentCount ?? documents.length;
+
+  function getMemoryPreview(content: string) {
+    const normalizedContent = content.replace(/\s+/g, " ").trim();
+
+    if (normalizedContent.length <= 180) {
+      return normalizedContent;
+    }
+
+    return `${normalizedContent.slice(0, 177)}...`;
+  }
 
   return (
     <div className="min-h-screen w-full p-8 text-white md:p-10">
@@ -325,6 +368,56 @@ export default function ProjectDetailPage({
                       >
                         <Trash2 size={16} />
                       </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
+          <div className="mb-6 flex items-center gap-3">
+            <Brain className="text-green-400" size={24} />
+            <div>
+              <h2 className="text-2xl font-semibold">Project Memories</h2>
+              <p className="text-sm text-slate-400">
+                Saved memories for this project are listed here without changing retrieval behavior.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-dashed border-slate-700 p-6 md:p-8">
+            {loadingMemories || loadingProject ? (
+              <p className="text-sm text-slate-400">Loading project memories...</p>
+            ) : memories.length === 0 ? (
+              <p className="text-sm text-slate-400">No memories saved yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {memories.map((memory) => (
+                  <div
+                    key={memory.id}
+                    className="rounded-xl border border-slate-800 bg-slate-950 p-4"
+                  >
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-green-300">
+                            {memory.memory_type}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300">
+                            <Star size={12} className="text-yellow-400" />
+                            Importance {memory.importance}
+                          </span>
+                        </div>
+
+                        <h3 className="mt-3 font-semibold text-white">{memory.title}</h3>
+                        <p className="mt-2 text-sm text-slate-300">{getMemoryPreview(memory.content)}</p>
+                      </div>
+
+                      <p className="shrink-0 text-xs text-slate-500">
+                        {new Date(memory.created_at).toLocaleDateString()}
+                      </p>
                     </div>
                   </div>
                 ))}
