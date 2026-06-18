@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2, FileText, Download } from "lucide-react";
+import { Trash2, FileText, Download, Eye } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -23,15 +23,12 @@ type VaultDocument = {
 export default function VaultPage() {
 
   const [uploading, setUploading] = useState(false);
-  const [importingLink, setImportingLink] = useState(false);
   const [documents, setDocuments] = useState<VaultDocument[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [documentProjectSelections, setDocumentProjectSelections] = useState<Record<string, string>>({});
   const [savingDocumentId, setSavingDocumentId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [shareUrl, setShareUrl] = useState("");
-  const [importTitle, setImportTitle] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const filteredDocuments = documents.filter((document) =>
   (document.filename || document.storage_path).toLowerCase().includes(searchTerm.toLowerCase())
@@ -187,41 +184,17 @@ const downloadFile = async (storagePath: string, filename: string | null) => {
   URL.revokeObjectURL(url);
 };
 
-const importSharedLink = async () => {
-  if (!shareUrl.trim() || !importTitle.trim()) {
-    setNotice({ type: "error", message: "Shared URL and document title are required." });
+const openFile = async (storagePath: string) => {
+  const { data, error } = await supabase.storage
+    .from("knowledge-vault")
+    .createSignedUrl(storagePath, 60);
+
+  if (error) {
+    alert(error.message);
     return;
   }
 
-  setImportingLink(true);
-
-  const response = await fetch("/api/vault/import-link", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      url: shareUrl.trim(),
-      title: importTitle.trim(),
-      projectId: selectedProjectId.trim() || null,
-    }),
-  });
-
-  const result = await response.json();
-  setImportingLink(false);
-
-  if (!response.ok) {
-    setNotice({ type: "error", message: result.error || "Import failed." });
-    return;
-  }
-
-  const scopeLabel = selectedProjectId
-    ? projects.find((project) => project.id === selectedProjectId)?.name || "selected project"
-    : "Global Vault";
-  setNotice({ type: "success", message: `Import successful! Scope: ${scopeLabel}` });
-  setShareUrl("");
-  setImportTitle("");
-  await loadFiles();
+  window.open(data.signedUrl, "_blank");
 };
 
 useEffect(() => {
@@ -246,7 +219,8 @@ useEffect(() => {
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      {/* TODO: ChatGPT share import disabled because shared pages may require login and may not expose transcript content. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_320px]">
 
         {/* Upload */}
         <div className="border-2 border-dashed border-slate-700 rounded-2xl p-10 text-center">
@@ -301,52 +275,6 @@ useEffect(() => {
     PDF, DOCX, TXT, CSV
   </p>
 </div>
-
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-          <h2 className="text-xl font-semibold text-white">
-            Import Shared ChatGPT Link
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-400">
-            Paste a public ChatGPT shared conversation link and import it into your vault as a document.
-          </p>
-
-          <div className="mt-5 space-y-4">
-            <label className="block text-sm text-slate-300">
-              <span className="mb-2 block">ChatGPT Share URL</span>
-              <input
-                value={shareUrl}
-                onChange={(e) => setShareUrl(e.target.value)}
-                disabled={importingLink}
-                placeholder="https://chatgpt.com/share/..."
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white"
-              />
-            </label>
-
-            <label className="block text-sm text-slate-300">
-              <span className="mb-2 block">Document Title</span>
-              <input
-                value={importTitle}
-                onChange={(e) => setImportTitle(e.target.value)}
-                disabled={importingLink}
-                placeholder="Imported ChatGPT Conversation"
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white"
-              />
-            </label>
-
-            <p className="text-xs text-slate-500">
-              Project Scope above is reused for both file uploads and shared-link imports.
-            </p>
-
-            <button
-              onClick={importSharedLink}
-              disabled={importingLink}
-              className="w-full rounded-xl bg-yellow-500 px-4 py-3 text-sm font-semibold text-black transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {importingLink ? "Importing..." : "Import Shared Link"}
-            </button>
-          </div>
-        </div>
 
         {/* Stats */}
         <div className="border border-slate-800 rounded-2xl p-6 bg-slate-900">
@@ -473,6 +401,13 @@ useEffect(() => {
   </div>
 
   <div className="flex items-center justify-end gap-2">
+    <button
+      onClick={() => openFile(document.storage_path)}
+      className="p-2 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-yellow-500/10 transition"
+    >
+      <Eye size={18} />
+    </button>
+
     <button
       onClick={() => downloadFile(document.storage_path, document.filename)}
       className="p-2 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-yellow-500/10 transition"
