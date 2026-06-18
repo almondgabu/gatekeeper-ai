@@ -29,11 +29,7 @@ export async function POST(request: Request) {
   const userMessage = body.message;
   const requestedModel = body.model || "gpt-5-mini";
   const projectId =
-    typeof body.projectId === "number"
-      ? body.projectId
-      : typeof body.projectId === "string" && body.projectId.trim()
-        ? Number(body.projectId)
-        : undefined;
+    typeof body.projectId === "string" && body.projectId.trim() ? body.projectId.trim() : undefined;
 
   if (!userMessage) {
     return Response.json({ error: "message required" }, { status: 400 });
@@ -46,7 +42,7 @@ export async function POST(request: Request) {
   const retrievedChunks = await retrieveKnowledgeContext(
     userMessage,
     5,
-    Number.isFinite(projectId as number) ? (projectId as number) : undefined
+    projectId
   );
   const knowledgeContext = formatRetrievedContext(retrievedChunks);
 

@@ -1,22 +1,60 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+type ProjectSummary = {
+  id: string;
+  name: string;
+  created_at?: string;
+  documentCount: number;
+};
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState([
-    "Dream World Resort",
-    "SMK Kundasang",
-    "Drone Survey Planner",
-    "BLG Content Library",
-  ]);
-
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [newProject, setNewProject] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const createProject = () => {
+  async function loadProjects() {
+    setLoading(true);
+
+    const response = await fetch("/api/projects", { cache: "no-store" });
+    const result = await response.json();
+
+    setLoading(false);
+
+    if (!response.ok) {
+      console.error(result.error || "failed to load projects");
+      return;
+    }
+
+    setProjects((result.projects ?? []) as ProjectSummary[]);
+  }
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  const createProject = async () => {
     if (!newProject.trim()) return;
 
-    setProjects([...projects, newProject]);
+    const projectName = newProject.trim();
+    const response = await fetch("/api/projects", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: projectName }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      alert(result.error || "Failed to create project.");
+      return;
+    }
+
+    setProjects((prev) => [result.project as ProjectSummary, ...prev]);
     setNewProject("");
   };
 
@@ -49,22 +87,32 @@ export default function ProjectsPage() {
       </div>
 
       <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-6">
-  {projects.map((project) => (
+  {loading ? (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
+      Loading projects...
+    </div>
+  ) : projects.length === 0 ? (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
+      No projects created yet.
+    </div>
+  ) : (
+    projects.map((project) => (
   <Link
-    href={`/projects/${project.toLowerCase().replace(/\s+/g, "-")}`}
-    key={project}
+    href={`/projects/${project.id}`}
+    key={project.id}
   >
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-yellow-500/40 transition cursor-pointer">
       <h3 className="font-semibold text-lg text-white">
-        {project}
+        {project.name}
       </h3>
 
       <p className="text-slate-400 text-sm mt-2">
-        0 Documents
+        {project.documentCount} Documents
       </p>
     </div>
   </Link>
-))}
+))
+  )}
       </div>
     </div>
   );

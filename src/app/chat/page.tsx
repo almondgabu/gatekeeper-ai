@@ -45,7 +45,8 @@ function ChatPageContent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
-  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeProjectName, setActiveProjectName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState("gpt-5-mini");
 
@@ -220,11 +221,11 @@ function ChatPageContent() {
     const newFlag = searchParams?.get("new");
     const conv = searchParams?.get("conversation");
     const projectIdParam = searchParams?.get("projectId");
-    const parsedProjectId = projectIdParam ? Number(projectIdParam) : NaN;
+    const parsedProjectId = projectIdParam?.trim() || null;
 
-    setActiveProjectId(Number.isNaN(parsedProjectId) ? null : parsedProjectId);
+    setActiveProjectId(parsedProjectId);
 
-    const baseChatUrl = Number.isNaN(parsedProjectId)
+    const baseChatUrl = !parsedProjectId
       ? "/chat"
       : `/chat?projectId=${parsedProjectId}`;
 
@@ -244,6 +245,31 @@ function ChatPageContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  useEffect(() => {
+    async function loadActiveProjectName(projectId: string) {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("name")
+        .eq("id", projectId)
+        .single();
+
+      if (error) {
+        console.error(error);
+        setActiveProjectName(null);
+        return;
+      }
+
+      setActiveProjectName(data?.name || null);
+    }
+
+    if (!activeProjectId) {
+      setActiveProjectName(null);
+      return;
+    }
+
+    loadActiveProjectName(activeProjectId);
+  }, [activeProjectId]);
 
   useEffect(() => {
     if (activeConversationId) {
@@ -360,7 +386,10 @@ function ChatPageContent() {
       <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Gatekeeper AI</p>
       <h1 className="text-sm font-semibold text-slate-200">Chat</h1>
       {activeProjectId && (
-        <p className="mt-1 text-xs text-yellow-400">Project-scoped retrieval active</p>
+        <>
+          <p className="mt-1 text-xs text-yellow-400">Project-scoped retrieval active</p>
+          <p className="mt-1 text-xs text-slate-300">Project: {activeProjectName || `#${activeProjectId}`}</p>
+        </>
       )}
     </div>
 
@@ -394,6 +423,9 @@ function ChatPageContent() {
           <p className="mt-2 max-w-xl text-sm text-slate-400">
             Ask, analyze, compare, summarize, or create content using Gatekeeper AI.
           </p>
+          {activeProjectId && (
+            <p className="mt-3 text-sm text-yellow-400">Project: {activeProjectName || `#${activeProjectId}`}</p>
+          )}
         </div>
 
         <select

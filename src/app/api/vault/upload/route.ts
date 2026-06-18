@@ -8,6 +8,8 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const file = formData.get("file");
+    const projectIdValue = formData.get("projectId");
+    const projectId = typeof projectIdValue === "string" && projectIdValue.trim() ? projectIdValue.trim() : null;
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "file required" }, { status: 400 });
@@ -35,6 +37,7 @@ export async function POST(request: Request) {
         storage_path: storagePath,
         file_size: file.size,
         mime_type: file.type || null,
+        project_id: projectId,
         status: "pending",
       })
       .select("id")

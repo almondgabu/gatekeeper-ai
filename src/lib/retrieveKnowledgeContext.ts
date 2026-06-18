@@ -8,10 +8,10 @@ export type RetrievedChunk = {
   similarity?: number;
 };
 
-export async function retrieveKnowledgeContext(query: string, matchCount = 5, projectId?: number) {
+export async function retrieveKnowledgeContext(query: string, matchCount = 5, projectId?: string) {
   let allowedDocumentIds: Set<string> | null = null;
 
-  if (typeof projectId === "number" && Number.isFinite(projectId)) {
+  if (typeof projectId === "string" && projectId.trim()) {
     allowedDocumentIds = await resolveProjectDocumentIds(projectId);
 
     if (allowedDocumentIds.size === 0) {
@@ -59,55 +59,15 @@ export async function retrieveKnowledgeContext(query: string, matchCount = 5, pr
   }));
 }
 
-async function resolveProjectDocumentIds(projectId: number) {
-  const { data: project, error: projectError } = await supabaseAdmin
-    .from("projects")
-    .select("id, name")
-    .eq("id", projectId)
-    .single();
+async function resolveProjectDocumentIds(projectId: string) {
+  const { data: documents, error } = await supabaseAdmin
+    .from("documents")
+    .select("id")
+    .eq("project_id", projectId);
 
-  if (projectError || !project) {
-    return new Set<string>();
+  if (error) {
+    throw new Error(error.message);
   }
 
-  const projectName = project.name;
-  const documentIds = new Set<string>();
-
-  const { data: projectFiles, error: projectFilesError } = await supabaseAdmin
-    .from("project_files")
-    .select("file_name")
-    .eq("project_name", projectName);
-
-  if (projectFilesError) {
-    throw new Error(projectFilesError.message);
-  }
-
-  const fileNames = [...new Set((projectFiles ?? []).map((file) => file.file_name).filter(Boolean))];
-
-  if (fileNames.length === 0) {
-    return documentIds;
-  }
-
-  const [storagePathDocuments, filenameDocuments] = await Promise.all([
-    supabaseAdmin.from("documents").select("id").in("storage_path", fileNames),
-    supabaseAdmin.from("documents").select("id").in("filename", fileNames),
-  ]);
-
-  if (storagePathDocuments.error) {
-    throw new Error(storagePathDocuments.error.message);
-  }
-
-  if (filenameDocuments.error) {
-    throw new Error(filenameDocuments.error.message);
-  }
-
-  for (const document of storagePathDocuments.data ?? []) {
-    documentIds.add(document.id);
-  }
-
-  for (const document of filenameDocuments.data ?? []) {
-    documentIds.add(document.id);
-  }
-
-  return documentIds;
+  return new Set((documents ?? []).map((document) => document.id as string).filter(Boolean));
 }
