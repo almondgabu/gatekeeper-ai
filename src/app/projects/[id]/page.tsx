@@ -1,7 +1,7 @@
 "use client";
 
+import Link from "next/link";
 import { use, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Brain,
   ChevronRight,
@@ -10,10 +10,8 @@ import {
   FileText,
   FolderOpen,
   MessageSquare,
-  Sparkles,
   Star,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -39,12 +37,10 @@ export default function ProjectDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const router = useRouter();
   const projectId = id.trim();
 
   const [project, setProject] = useState<ProjectRecord | null>(null);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
-  const [uploading, setUploading] = useState(false);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [loadingProject, setLoadingProject] = useState(true);
 
@@ -74,38 +70,6 @@ export default function ProjectDetailPage({
     setLoadingDocuments(true);
     loadProject();
   }, [projectId]);
-
-  async function handleProjectUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-
-    if (!file || !project?.id) {
-      return;
-    }
-
-    setUploading(true);
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("projectId", String(project.id));
-
-    const response = await fetch("/api/vault/upload", {
-      method: "POST",
-      body: formData,
-    });
-
-    const result = await response.json();
-
-    setUploading(false);
-    event.target.value = "";
-
-    if (!response.ok) {
-      alert(result.error || "Upload failed.");
-      return;
-    }
-
-    alert(result.indexed === false ? "Upload complete. Indexing still needs attention." : "Upload successful!");
-    await loadProject();
-  }
 
   async function unassignDocument(documentId: string) {
     const confirmed = confirm("Remove this document from the project?");
@@ -158,12 +122,8 @@ export default function ProjectDetailPage({
     URL.revokeObjectURL(url);
   }
 
-  function openProjectChat(startNew = false) {
-    const suffix = startNew ? "?new=1" : "";
-    router.push(`/projects/${id}/chat${suffix}`);
-  }
-
   const latestDocument = documents[0];
+  const documentCount = project?.documentCount ?? documents.length;
 
   return (
     <div className="min-h-screen w-full p-8 text-white md:p-10">
@@ -177,30 +137,41 @@ export default function ProjectDetailPage({
           </div>
 
           <p className="mt-3 max-w-2xl text-slate-400">
-            Manage project-specific documents and open a project-scoped chat that only retrieves knowledge from this project.
+            View every document linked to this project and open a project-scoped chat that retrieves only from this workspace.
           </p>
         </div>
 
-        <button
-          onClick={() => openProjectChat(true)}
-          className="flex items-center gap-2 rounded-xl bg-yellow-500 px-6 py-3 font-semibold text-black transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!project}
-        >
-          <Sparkles size={18} />
-          Ask Project AI
-        </button>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Link
+            href={`/projects/${projectId}/chat`}
+            className={`flex items-center justify-center gap-2 rounded-xl bg-yellow-500 px-6 py-3 font-semibold text-black transition hover:bg-yellow-400 ${!project ? "pointer-events-none opacity-60" : ""}`}
+            aria-disabled={!project}
+          >
+            <MessageSquare size={18} />
+            Chat With Project
+          </Link>
+
+          <Link
+            href={`/vault?projectId=${encodeURIComponent(projectId)}`}
+            className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-6 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+          >
+            <FileText size={18} />
+            Upload Document
+          </Link>
+        </div>
       </div>
 
       <div className="mb-8 flex flex-wrap gap-3 border-b border-slate-800 pb-4">
         <button className="rounded-full border border-yellow-500/40 bg-yellow-500/10 px-4 py-2 text-sm font-semibold text-yellow-300">
           Files
         </button>
-        <button
-          onClick={() => openProjectChat(false)}
-          className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-yellow-500/40 hover:text-white"
+        <Link
+          href={`/projects/${projectId}/chat`}
+          className={`rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-yellow-500/40 hover:text-white ${!project ? "pointer-events-none opacity-60" : ""}`}
+          aria-disabled={!project}
         >
           Chat
-        </button>
+        </Link>
       </div>
 
       <div className="mb-8 grid gap-6 md:grid-cols-3">
@@ -208,7 +179,7 @@ export default function ProjectDetailPage({
           icon={<FileText size={28} />}
           color="yellow"
           title="Documents"
-          value={project?.documentCount ?? documents.length}
+          value={documentCount}
           desc="Files assigned to this project"
         />
         <StatCard
@@ -233,29 +204,20 @@ export default function ProjectDetailPage({
             <div className="flex items-center gap-3">
               <FolderOpen className="text-yellow-400" size={24} />
               <div>
-                <h2 className="text-2xl font-semibold">Project Files</h2>
+                <h2 className="text-2xl font-semibold">Documents</h2>
                 <p className="text-sm text-slate-400">
                   Only documents with this project&apos;s `project_id` appear here.
                 </p>
               </div>
             </div>
 
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-yellow-500 px-5 py-3 font-semibold text-black transition hover:bg-yellow-400">
-              <Upload size={18} />
-              Upload to Project
-              <input
-                type="file"
-                className="hidden"
-                onChange={handleProjectUpload}
-                disabled={uploading || !project}
-              />
-            </label>
+            <div className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200">
+              Document Count: {documentCount}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-dashed border-slate-700 p-6 md:p-8">
-            {uploading ? (
-              <p className="text-sm text-yellow-400">Uploading and indexing document...</p>
-            ) : loadingDocuments || loadingProject ? (
+            {loadingDocuments || loadingProject ? (
               <p className="text-sm text-slate-400">Loading project documents...</p>
             ) : documents.length === 0 ? (
               <div className="flex min-h-[260px] flex-col items-center justify-center text-center">
@@ -263,10 +225,17 @@ export default function ProjectDetailPage({
                   <FileText className="text-yellow-400" size={40} />
                 </div>
 
-                <h3 className="text-xl font-semibold">No project files yet</h3>
+                <h3 className="text-xl font-semibold">No documents uploaded yet</h3>
                 <p className="mt-3 max-w-lg text-slate-400">
-                  Upload documents from this project workspace to keep retrieval isolated from the rest of the Knowledge Vault.
+                  Upload documents from the Vault using this project context to keep retrieval isolated from the rest of the Knowledge Vault.
                 </p>
+                <Link
+                  href={`/vault?projectId=${encodeURIComponent(projectId)}`}
+                  className="mt-6 inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-5 py-3 font-semibold text-black transition hover:bg-yellow-400"
+                >
+                  <FileText size={18} />
+                  Upload Document
+                </Link>
               </div>
             ) : (
               <div className="space-y-3">
@@ -328,8 +297,8 @@ export default function ProjectDetailPage({
             color="purple"
             title="Project Chat"
             desc="Open a chat session that only retrieves this project&apos;s documents."
-            button="Open Chat"
-            onClick={() => openProjectChat(false)}
+            button="Chat With Project"
+            href={`/projects/${projectId}/chat`}
             disabled={!project}
           />
 
@@ -338,9 +307,8 @@ export default function ProjectDetailPage({
             color="green"
             title="Retrieval Scope"
             desc="Knowledge Vault retrieval now filters by `documents.project_id` when project context exists."
-            button="Start New Chat"
-            onClick={() => openProjectChat(true)}
-            disabled={!project}
+            button="Upload Document"
+            href={`/vault?projectId=${encodeURIComponent(projectId)}`}
           />
 
           <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
@@ -389,7 +357,7 @@ function StatCard({ icon, title, value, desc, color }: any) {
   );
 }
 
-function SideCard({ icon, title, desc, button, color, onClick, disabled }: any) {
+function SideCard({ icon, title, desc, button, color, href, disabled }: any) {
   const colors: Record<string, string> = {
     purple: "text-purple-400",
     green: "text-green-400",
@@ -404,14 +372,14 @@ function SideCard({ icon, title, desc, button, color, onClick, disabled }: any) 
 
       <p className="mb-5 text-sm text-slate-400">{desc}</p>
 
-      <button
-        onClick={onClick}
-        disabled={disabled}
-        className="flex w-full items-center justify-between rounded-xl border border-slate-700 px-4 py-3 text-slate-200 hover:border-yellow-500/40 disabled:cursor-not-allowed disabled:opacity-60"
+      <Link
+        href={href}
+        aria-disabled={disabled}
+        className={`flex w-full items-center justify-between rounded-xl border border-slate-700 px-4 py-3 text-slate-200 hover:border-yellow-500/40 ${disabled ? "pointer-events-none opacity-60" : ""}`}
       >
         {button}
         <ChevronRight size={16} />
-      </button>
+      </Link>
     </div>
   );
 }
