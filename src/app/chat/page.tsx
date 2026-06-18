@@ -31,6 +31,13 @@ type Message = {
   content: string;
 };
 
+type MemoryDraft = {
+  memoryType: string;
+  title: string;
+  content: string;
+  importance: number;
+};
+
 type Conversation = {
   id: number;
   title: string;
@@ -59,6 +66,9 @@ function ChatPageContent() {
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [memoryDraft, setMemoryDraft] = useState<MemoryDraft | null>(null);
+  const [savingMemory, setSavingMemory] = useState(false);
+  const [memoryNotice, setMemoryNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -327,6 +337,65 @@ function ChatPageContent() {
     setShowJumpToLatest(!isNearBottom);
   }
 
+  function buildMemoryTitle(content: string) {
+    const normalizedContent = content.replace(/\s+/g, " ").trim();
+
+    if (!normalizedContent) {
+      return "Saved Assistant Memory";
+    }
+
+    return normalizedContent.length > 60
+      ? `${normalizedContent.slice(0, 60).trimEnd()}...`
+      : normalizedContent;
+  }
+
+  function openSaveMemoryDialog(content: string) {
+    setMemoryNotice(null);
+    setMemoryDraft({
+      memoryType: "technical",
+      title: buildMemoryTitle(content),
+      content,
+      importance: 1,
+    });
+  }
+
+  async function saveMemory() {
+    if (!memoryDraft || !scopedProjectId) {
+      return;
+    }
+
+    setSavingMemory(true);
+
+    const response = await fetch("/api/project-memories", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        projectId: scopedProjectId,
+        memoryType: memoryDraft.memoryType,
+        title: memoryDraft.title,
+        content: memoryDraft.content,
+        sourceConversationId: activeConversationId,
+        importance: memoryDraft.importance,
+      }),
+    });
+
+    const result = await response.json();
+    setSavingMemory(false);
+
+    if (!response.ok) {
+      setMemoryNotice({
+        type: "error",
+        message: result.error || "Failed to save memory.",
+      });
+      return;
+    }
+
+    setMemoryDraft(null);
+    setMemoryNotice({ type: "success", message: "Memory saved" });
+  }
+
   const pinnedConversations = conversations.filter((c) => Boolean((c as any).pinned));
   const recentConversations = conversations.filter((c) => !Boolean((c as any).pinned));
 
@@ -426,6 +495,96 @@ function ChatPageContent() {
   </aside>
 
 <section className="relative z-10 flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-slate-950">
+  {memoryDraft && (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-2xl md:p-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Save To Memory</h2>
+            <p className="mt-1 text-sm text-slate-400">Save this assistant response into project memories.</p>
+          </div>
+
+          <button
+            onClick={() => {
+              setMemoryDraft(null);
+              setMemoryNotice(null);
+            }}
+            className="rounded-lg border border-slate-700 p-2 text-slate-400 transition hover:text-white"
+            aria-label="Close save memory dialog"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <label className="block text-sm text-slate-300">
+            <span className="mb-2 block">Memory Type</span>
+            <input
+              value={memoryDraft.memoryType}
+              onChange={(e) => setMemoryDraft((current) => current ? { ...current, memoryType: e.target.value } : current)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none"
+            />
+          </label>
+
+          <label className="block text-sm text-slate-300">
+            <span className="mb-2 block">Title</span>
+            <input
+              value={memoryDraft.title}
+              onChange={(e) => setMemoryDraft((current) => current ? { ...current, title: e.target.value } : current)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none"
+            />
+          </label>
+
+          <label className="block text-sm text-slate-300">
+            <span className="mb-2 block">Content</span>
+            <textarea
+              value={memoryDraft.content}
+              onChange={(e) => setMemoryDraft((current) => current ? { ...current, content: e.target.value } : current)}
+              className="min-h-[160px] w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none"
+            />
+          </label>
+
+          <label className="block text-sm text-slate-300">
+            <span className="mb-2 block">Importance</span>
+            <input
+              type="number"
+              min={1}
+              value={memoryDraft.importance}
+              onChange={(e) => setMemoryDraft((current) => current ? { ...current, importance: Number(e.target.value) || 1 } : current)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none"
+            />
+          </label>
+
+          {memoryNotice && (
+            <div className={`rounded-xl border px-4 py-3 text-sm ${memoryNotice.type === "success" ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-red-500/30 bg-red-500/10 text-red-300"}`}>
+              {memoryNotice.message}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button
+              onClick={() => {
+                setMemoryDraft(null);
+                setMemoryNotice(null);
+              }}
+              className="rounded-xl border border-slate-700 px-4 py-3 text-sm font-medium text-slate-200 transition hover:border-slate-500"
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={saveMemory}
+              disabled={savingMemory}
+              className="rounded-xl bg-yellow-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {savingMemory ? "Saving..." : "Save To Memory"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+
   <div className="hidden shrink-0 items-center justify-between border-b border-slate-800 bg-slate-950/90 px-4 py-3 backdrop-blur md:flex">
     <div>
       <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Gatekeeper AI</p>
@@ -541,6 +700,17 @@ function ChatPageContent() {
             <div className="prose prose-sm prose-invert max-w-none prose-p:mb-3 prose-p:leading-6 prose-li:mb-1 prose-headings:text-white prose-headings:font-semibold prose-strong:text-yellow-300 prose-table:block prose-table:w-full prose-table:overflow-hidden prose-table:rounded-xl prose-table:border prose-table:border-slate-700 prose-thead:bg-slate-800 prose-th:border prose-th:border-slate-700 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:text-xs prose-th:font-semibold prose-th:text-slate-200 prose-td:border prose-td:border-slate-800 prose-td:px-3 prose-td:py-2 prose-td:text-sm prose-td:text-slate-300">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
             </div>
+
+            {scopedProjectId && msg.role === "assistant" && (
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => openSaveMemoryDialog(msg.content)}
+                  className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs font-semibold text-yellow-300 transition hover:bg-yellow-500/20"
+                >
+                  Save To Memory
+                </button>
+              </div>
+            )}
           </div>
       ))}
 
@@ -554,6 +724,12 @@ function ChatPageContent() {
       {loading && (
         <div className="mb-3 rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-400">
           Gatekeeper AI is thinking...
+        </div>
+      )}
+
+      {!memoryDraft && memoryNotice && (
+        <div className={`mb-3 rounded-xl border px-3 py-2 text-sm ${memoryNotice.type === "success" ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-red-500/30 bg-red-500/10 text-red-300"}`}>
+          {memoryNotice.message}
         </div>
       )}
 
