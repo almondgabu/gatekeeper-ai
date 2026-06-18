@@ -28,6 +28,10 @@ export async function POST(request: Request) {
 
   const userMessage = body.message;
   const requestedModel = body.model || "gpt-5-mini";
+  const conversationId =
+    typeof body.conversationId === "number" || typeof body.conversationId === "string"
+      ? body.conversationId
+      : undefined;
   const projectId =
     typeof body.projectId === "string" && body.projectId.trim() ? body.projectId.trim() : undefined;
 
@@ -38,6 +42,11 @@ export async function POST(request: Request) {
   const model = allowedModels.includes(requestedModel)
     ? requestedModel
     : "gpt-5-mini";
+
+  console.log(
+    projectId ? `Project Retrieval: ${projectId}` : "Global Retrieval",
+    conversationId ? `conversation=${conversationId}` : ""
+  );
 
   const retrievedChunks = await retrieveKnowledgeContext(
     userMessage,

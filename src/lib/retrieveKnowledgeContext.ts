@@ -8,15 +8,31 @@ export type RetrievedChunk = {
   similarity?: number;
 };
 
-export async function retrieveKnowledgeContext(query: string, matchCount = 5, projectId?: string) {
+export async function retrieveKnowledgeContext(query: string, projectId?: string): Promise<RetrievedChunk[]>;
+export async function retrieveKnowledgeContext(
+  query: string,
+  matchCount: number,
+  projectId?: string
+): Promise<RetrievedChunk[]>;
+export async function retrieveKnowledgeContext(
+  query: string,
+  matchCountOrProjectId: number | string = 5,
+  explicitProjectId?: string
+) {
+  const matchCount = typeof matchCountOrProjectId === "number" ? matchCountOrProjectId : 5;
+  const projectId =
+    typeof matchCountOrProjectId === "string" ? matchCountOrProjectId : explicitProjectId;
   let allowedDocumentIds: Set<string> | null = null;
 
   if (typeof projectId === "string" && projectId.trim()) {
+    console.log(`Project Retrieval: ${projectId}`);
     allowedDocumentIds = await resolveProjectDocumentIds(projectId);
 
     if (allowedDocumentIds.size === 0) {
       return [];
     }
+  } else {
+    console.log("Global Retrieval");
   }
 
   const queryEmbedding = await createEmbedding(query);

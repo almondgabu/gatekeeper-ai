@@ -15,5 +15,5 @@ export default async function ProjectChatRedirectPage({
   }
 
   const suffix = newFlag ? "&new=1" : "";
-  redirect(`/chat?projectId=${id.trim()}${suffix}`);
+  redirect(`/chat?projectId=${encodeURIComponent(id.trim())}${suffix}`);
 }
