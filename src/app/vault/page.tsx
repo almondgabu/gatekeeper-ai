@@ -3,10 +3,18 @@
 import { Trash2, FileText, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+
+type ProjectOption = {
+  id: string;
+  name: string;
+};
+
 export default function VaultPage() {
 
   const [uploading, setUploading] = useState(false);
   const [files, setFiles] = useState<any[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const filteredFiles = files.filter((file) =>
   file.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -25,6 +33,17 @@ const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
     setFiles(data);
   }
 };
+  const loadProjects = async () => {
+  const response = await fetch("/api/projects", { cache: "no-store" });
+  const result = await response.json();
+
+  if (!response.ok) {
+    console.error(result.error || "Failed to load projects.");
+    return;
+  }
+
+  setProjects((result.projects ?? []) as ProjectOption[]);
+};
   const handleUpload = async (
   event: React.ChangeEvent<HTMLInputElement>
 ) => {
@@ -36,6 +55,9 @@ const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
 
     const formData = new FormData();
     formData.append("file", file);
+    if (selectedProjectId.trim()) {
+      formData.append("projectId", selectedProjectId.trim());
+    }
 
     const response = await fetch("/api/vault/upload", {
       method: "POST",
@@ -47,11 +69,15 @@ const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
     if (!response.ok) {
       alert(result.error || "Upload failed.");
     } else {
-      alert("Upload successful!");
+      const scopeLabel = selectedProjectId
+        ? projects.find((project) => project.id === selectedProjectId)?.name || "selected project"
+        : "Global Vault";
+      alert(`Upload successful! Scope: ${scopeLabel}`);
       await loadFiles();
     }
 
   setUploading(false);
+  event.target.value = "";
 };
 
 const deleteFile = async (fileName: string) => {
@@ -93,6 +119,7 @@ const downloadFile = async (fileName: string) => {
 
 useEffect(() => {
   loadFiles();
+  loadProjects();
 }, []);
   return (
     <div className="p-8 max-w-7xl">
@@ -119,6 +146,30 @@ useEffect(() => {
   <p className="text-slate-400 mt-2">
     Drag & drop files or click to browse
   </p>
+
+  <div className="mt-6 text-left">
+    <label className="mb-2 block text-sm font-medium text-slate-300">
+      Project Scope
+    </label>
+
+    <select
+      value={selectedProjectId}
+      onChange={(e) => setSelectedProjectId(e.target.value)}
+      disabled={uploading}
+      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white"
+    >
+      <option value="">No Project / Global Vault</option>
+      {projects.map((project) => (
+        <option key={project.id} value={project.id}>
+          {project.name}
+        </option>
+      ))}
+    </select>
+
+    <p className="mt-2 text-xs text-slate-500">
+      Leave this unset to keep the document available to global vault retrieval.
+    </p>
+  </div>
 
   <input
   type="file"
