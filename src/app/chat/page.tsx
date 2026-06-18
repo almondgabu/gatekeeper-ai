@@ -41,6 +41,9 @@ type Conversation = {
 
 function ChatPageContent() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const previousMessageCountRef = useRef(0);
+  const previousLoadingRef = useRef(false);
 
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -54,6 +57,8 @@ function ChatPageContent() {
   
   const [conversationPanelOpen, setConversationPanelOpen] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -287,15 +292,40 @@ function ChatPageContent() {
 
   useEffect(() => {
     if (activeConversationId) {
+      setAutoScrollEnabled(true);
+      setShowJumpToLatest(false);
       loadMessages(activeConversationId);
     }
   }, [activeConversationId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-    });
-  }, [messages, loading]);
+    const hasNewMessage = messages.length > previousMessageCountRef.current;
+    const assistantMessageStarted = loading && !previousLoadingRef.current;
+
+    if (autoScrollEnabled && (hasNewMessage || assistantMessageStarted)) {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+      });
+    }
+
+    previousMessageCountRef.current = messages.length;
+    previousLoadingRef.current = loading;
+  }, [messages.length, loading, autoScrollEnabled]);
+
+  function handleMessagesScroll() {
+    const container = messagesContainerRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isNearBottom = distanceFromBottom < 80;
+
+    setAutoScrollEnabled(isNearBottom);
+    setShowJumpToLatest(!isNearBottom);
+  }
 
   const pinnedConversations = conversations.filter((c) => Boolean((c as any).pinned));
   const recentConversations = conversations.filter((c) => !Boolean((c as any).pinned));
@@ -416,7 +446,11 @@ function ChatPageContent() {
     </button>
   </div>
 
-  <div className="flex-1 min-h-0 overflow-y-auto">
+  <div
+    ref={messagesContainerRef}
+    onScroll={handleMessagesScroll}
+    className="flex-1 min-h-0 overflow-y-auto"
+  >
     <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 py-5 md:px-6 md:py-6">
   {messages.length === 0 && (
     <div className="mb-6 md:mb-8">
