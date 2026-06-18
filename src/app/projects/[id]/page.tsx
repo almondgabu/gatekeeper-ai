@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { use, useEffect, useState } from "react";
 import {
   Brain,
@@ -44,9 +46,14 @@ type ProjectMemory = {
   memory_type: string;
   title: string;
   content: string;
+  source_conversation_id: number | null;
   importance: number;
   created_at: string;
 };
+
+const MEMORY_TYPE_FILTERS = ["all", "technical", "decision", "legal", "financial", "property"] as const;
+
+type MemoryTypeFilter = (typeof MEMORY_TYPE_FILTERS)[number];
 
 export default function ProjectDetailPage({
   params,
@@ -60,6 +67,11 @@ export default function ProjectDetailPage({
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [conversations, setConversations] = useState<ProjectConversation[]>([]);
   const [memories, setMemories] = useState<ProjectMemory[]>([]);
+  const [memorySearch, setMemorySearch] = useState("");
+  const [memoryTypeFilter, setMemoryTypeFilter] = useState<MemoryTypeFilter>("all");
+  const [projectBrief, setProjectBrief] = useState("");
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const [generatingBrief, setGeneratingBrief] = useState(false);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMemories, setLoadingMemories] = useState(false);
@@ -196,8 +208,51 @@ export default function ProjectDetailPage({
     URL.revokeObjectURL(url);
   }
 
+  async function generateProjectBrief() {
+    if (!projectId) {
+      return;
+    }
+
+    setGeneratingBrief(true);
+    setBriefError(null);
+
+    const response = await fetch("/api/project-brief", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ projectId }),
+    });
+
+    const result = await response.json();
+    setGeneratingBrief(false);
+
+    if (!response.ok) {
+      setBriefError(result.error || "Failed to generate project brief.");
+      return;
+    }
+
+    setProjectBrief(typeof result.brief === "string" ? result.brief : "");
+  }
+
   const latestDocument = documents[0];
   const documentCount = project?.documentCount ?? documents.length;
+  const normalizedMemorySearch = memorySearch.trim().toLowerCase();
+  const filteredMemories = memories.filter((memory) => {
+    const matchesType =
+      memoryTypeFilter === "all" || memory.memory_type.toLowerCase() === memoryTypeFilter;
+
+    if (!matchesType) {
+      return false;
+    }
+
+    if (!normalizedMemorySearch) {
+      return true;
+    }
+
+    const searchableText = `${memory.title} ${memory.content} ${memory.memory_type}`.toLowerCase();
+    return searchableText.includes(normalizedMemorySearch);
+  });
 
   function getMemoryPreview(content: string) {
     const normalizedContent = content.replace(/\s+/g, " ").trim();
@@ -226,6 +281,16 @@ export default function ProjectDetailPage({
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            onClick={generateProjectBrief}
+            disabled={generatingBrief || !projectId}
+            className="flex items-center justify-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-6 py-3 font-semibold text-green-200 transition hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Brain size={18} />
+            {generatingBrief ? "Generating..." : "Generate Project Brief"}
+          </button>
+
           <Link
             href={`/projects/${projectId}/chat`}
             className={`flex items-center justify-center gap-2 rounded-xl bg-yellow-500 px-6 py-3 font-semibold text-black transition hover:bg-yellow-400 ${!project ? "pointer-events-none opacity-60" : ""}`}
@@ -281,6 +346,36 @@ export default function ProjectDetailPage({
           desc="Retrieval filtered by project"
         />
       </div>
+
+      {(generatingBrief || briefError || projectBrief) && (
+        <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
+          <div className="mb-4 flex items-center gap-3">
+            <Brain className="text-green-400" size={24} />
+            <div>
+              <h2 className="text-2xl font-semibold">Project Brief</h2>
+              <p className="text-sm text-slate-400">
+                AI-generated summary across project memories, documents, and recent conversations.
+              </p>
+            </div>
+          </div>
+
+          {generatingBrief && (
+            <p className="text-sm text-slate-400">Generating project brief...</p>
+          )}
+
+          {!generatingBrief && briefError && (
+            <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              {briefError}
+            </p>
+          )}
+
+          {!generatingBrief && !briefError && projectBrief && (
+            <div className="chat-markdown max-w-none rounded-2xl border border-slate-800 bg-slate-950 p-5">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{projectBrief}</ReactMarkdown>
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,4fr)_320px]">
         <div className="space-y-6">
@@ -393,8 +488,42 @@ export default function ProjectDetailPage({
             ) : memories.length === 0 ? (
               <p className="text-sm text-slate-400">No memories saved yet.</p>
             ) : (
-              <div className="space-y-3">
-                {memories.map((memory) => (
+              <div>
+                <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <input
+                    value={memorySearch}
+                    onChange={(event) => setMemorySearch(event.target.value)}
+                    placeholder="Search memories..."
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white placeholder:text-slate-500 md:max-w-sm"
+                  />
+
+                  <div className="flex flex-wrap gap-2">
+                    {MEMORY_TYPE_FILTERS.map((filter) => {
+                      const isActive = memoryTypeFilter === filter;
+
+                      return (
+                        <button
+                          key={filter}
+                          type="button"
+                          onClick={() => setMemoryTypeFilter(filter)}
+                          className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+                            isActive
+                              ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-300"
+                              : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500 hover:text-white"
+                          }`}
+                        >
+                          {filter}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {filteredMemories.length === 0 ? (
+                  <p className="text-sm text-slate-400">No memories match the current search or filter.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredMemories.map((memory) => (
                   <div
                     key={memory.id}
                     className="rounded-xl border border-slate-800 bg-slate-950 p-4"
@@ -413,6 +542,18 @@ export default function ProjectDetailPage({
 
                         <h3 className="mt-3 font-semibold text-white">{memory.title}</h3>
                         <p className="mt-2 text-sm text-slate-300">{getMemoryPreview(memory.content)}</p>
+
+                        {memory.source_conversation_id ? (
+                          <Link
+                            href={`/chat?conversationId=${memory.source_conversation_id}&projectId=${encodeURIComponent(projectId)}`}
+                            className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-yellow-300 transition hover:text-yellow-200"
+                          >
+                            Open Source Conversation
+                            <ChevronRight size={14} />
+                          </Link>
+                        ) : (
+                          <p className="mt-4 text-sm text-slate-500">No source conversation</p>
+                        )}
                       </div>
 
                       <p className="shrink-0 text-xs text-slate-500">
@@ -420,7 +561,9 @@ export default function ProjectDetailPage({
                       </p>
                     </div>
                   </div>
-                ))}
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
