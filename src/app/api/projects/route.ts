@@ -9,6 +9,7 @@ type ProjectRow = {
   id: string;
   name: string;
   created_at: string;
+  updated_at?: string | null;
 };
 
 type DocumentRow = {
@@ -27,6 +28,18 @@ function countDocumentsByProject(documents: Array<{ project_id: string | null }>
   for (const document of documents) {
     if (typeof document.project_id === "string" && document.project_id.trim()) {
       counts.set(document.project_id, (counts.get(document.project_id) ?? 0) + 1);
+    }
+  }
+
+  return counts;
+}
+
+function countRowsByProject(rows: Array<{ project_id: string | null }>) {
+  const counts = new Map<string, number>();
+
+  for (const row of rows) {
+    if (typeof row.project_id === "string" && row.project_id.trim()) {
+      counts.set(row.project_id, (counts.get(row.project_id) ?? 0) + 1);
     }
   }
 
@@ -69,10 +82,17 @@ export async function GET(request: Request) {
     });
   }
 
-  const [{ data: projects, error: projectsError }, { data: documents, error: documentsError }] =
+  const [
+    { data: projects, error: projectsError },
+    { data: documents, error: documentsError },
+    { data: conversations, error: conversationsError },
+    { data: memories, error: memoriesError },
+  ] =
     await Promise.all([
       supabaseAdmin.from("projects").select("id, name, created_at").order("created_at", { ascending: false }),
       supabaseAdmin.from("documents").select("project_id"),
+      supabaseAdmin.from("conversations").select("project_id"),
+      supabaseAdmin.from("project_memories").select("project_id"),
     ]);
 
   if (projectsError) {
@@ -83,12 +103,24 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: documentsError.message }, { status: 500 });
   }
 
-  const counts = countDocumentsByProject((documents ?? []) as Array<{ project_id: string | null }>);
+  if (conversationsError) {
+    return NextResponse.json({ error: conversationsError.message }, { status: 500 });
+  }
+
+  if (memoriesError) {
+    return NextResponse.json({ error: memoriesError.message }, { status: 500 });
+  }
+
+  const documentCounts = countDocumentsByProject((documents ?? []) as Array<{ project_id: string | null }>);
+  const conversationCounts = countRowsByProject((conversations ?? []) as Array<{ project_id: string | null }>);
+  const memoryCounts = countRowsByProject((memories ?? []) as Array<{ project_id: string | null }>);
 
   return NextResponse.json({
     projects: (projects ?? []).map((project) => ({
       ...(project as ProjectRow),
-      documentCount: counts.get(project.id as string) ?? 0,
+      documentCount: documentCounts.get(project.id as string) ?? 0,
+      conversationCount: conversationCounts.get(project.id as string) ?? 0,
+      memoryCount: memoryCounts.get(project.id as string) ?? 0,
     })),
   });
 }
