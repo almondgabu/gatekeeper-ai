@@ -5,9 +5,7 @@ import remarkGfm from "remark-gfm";
 import { supabase } from "@/lib/supabase";
 import { Suspense, useEffect, useRef, useState } from "react";
 import {
-  Menu,
   X,
-  Plus,
   PanelLeftClose,
   PanelLeftOpen,
   BarChart3,
@@ -23,7 +21,6 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import ConversationList from "@/components/ConversationList";
 
 
 type Message = {
@@ -44,6 +41,17 @@ type Conversation = {
   created_at: string;
   project_id?: string | null;
   pinned?: boolean;
+  messageCount?: number;
+};
+
+type Project = {
+  id: string;
+  name: string;
+};
+
+type Notice = {
+  type: "success" | "error";
+  message: string;
 };
 
 function ChatPageContent() {
@@ -55,6 +63,7 @@ function ChatPageContent() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectName, setActiveProjectName] = useState<string | null>(null);
@@ -66,37 +75,63 @@ function ChatPageContent() {
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [movingConversationId, setMovingConversationId] = useState<number | null>(null);
+  const [conversationNotice, setConversationNotice] = useState<Notice | null>(null);
+  const [conversationProjectSelections, setConversationProjectSelections] = useState<Record<number, string>>({});
   const [memoryDraft, setMemoryDraft] = useState<MemoryDraft | null>(null);
   const [savingMemory, setSavingMemory] = useState(false);
-  const [memoryNotice, setMemoryNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [memoryNotice, setMemoryNotice] = useState<Notice | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
   const scopedProjectId = searchParams?.get("projectId")?.trim() || null;
 
-  function scopeConversationQuery(query: any, projectId: string | null) {
-    return projectId
-      ? query.eq("project_id", projectId)
-      : query.is("project_id", null);
+  function syncConversationProjectSelections(nextConversations: Conversation[]) {
+    setConversationProjectSelections((current) => {
+      const nextSelections: Record<number, string> = {};
+
+      for (const conversation of nextConversations) {
+        nextSelections[conversation.id] = current[conversation.id] ?? conversation.project_id ?? "";
+      }
+
+      return nextSelections;
+    });
   }
 
   async function loadConversations(projectId: string | null = scopedProjectId) {
-    const query = scopeConversationQuery(
-      supabase
-      .from("conversations")
-      .select("*")
-      .order("created_at", { ascending: false }),
-      projectId
-    );
+    const params = new URLSearchParams();
 
-    const { data, error } = await query;
+    if (projectId) {
+      params.set("projectId", projectId);
+    }
 
-    if (error) {
-      console.error(error);
+    const response = await fetch(`/api/conversations${params.size > 0 ? `?${params.toString()}` : ""}`, {
+      cache: "no-store",
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error(result.error || "failed to load conversations");
       return;
     }
 
-    setConversations(data || []);
+    const nextConversations = (result ?? []) as Conversation[];
+    setConversations(nextConversations);
+    syncConversationProjectSelections(nextConversations);
+  }
+
+  async function loadProjects() {
+    const response = await fetch("/api/projects", {
+      cache: "no-store",
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error(result.error || "failed to load projects");
+      return;
+    }
+
+    setProjects((result.projects ?? []) as Project[]);
   }
 
   async function loadMessages(conversationId: number) {
@@ -128,7 +163,31 @@ function ChatPageContent() {
 
     setActiveConversationId(data.id);
     setMessages([]);
+    setConversationNotice(null);
     await loadConversations(projectId);
+  }
+
+  async function togglePin(conversation: Conversation) {
+    const newPinned = !Boolean(conversation.pinned);
+    const { error } = await supabase
+      .from("conversations")
+      .update({ pinned: newPinned })
+      .eq("id", conversation.id);
+
+    if (error) {
+      console.error(error);
+      setConversationNotice({ type: "error", message: error.message });
+      return;
+    }
+
+    setConversations((prev) =>
+      prev.map((currentConversation) =>
+        currentConversation.id === conversation.id
+          ? { ...currentConversation, pinned: newPinned }
+          : currentConversation
+      )
+    );
+    setOpenMenuId(null);
   }
 
   async function renameChat(conversationId: number, currentTitle: string) {
@@ -143,9 +202,11 @@ function ChatPageContent() {
 
     if (error) {
       console.error(error);
+      setConversationNotice({ type: "error", message: error.message });
       return;
     }
 
+    setConversationNotice({ type: "success", message: "Conversation renamed" });
     await loadConversations(scopedProjectId);
   }
 
@@ -165,6 +226,7 @@ function ChatPageContent() {
 
     if (error) {
       console.error(error);
+      setConversationNotice({ type: "error", message: error.message });
       return;
     }
 
@@ -180,6 +242,7 @@ function ChatPageContent() {
       setMessages([]);
     }
 
+    setConversationNotice({ type: "success", message: "Conversation deleted" });
     await loadConversations(scopedProjectId);
   }
 
@@ -208,25 +271,124 @@ function ChatPageContent() {
     await loadConversations(scopedProjectId);
   }
 
+  async function updateConversationProject(conversation: Conversation) {
+    const selectedProjectId = conversationProjectSelections[conversation.id] ?? conversation.project_id ?? "";
+    const nextProjectId = selectedProjectId.trim() ? selectedProjectId.trim() : null;
+    const currentProjectId = conversation.project_id ?? null;
+
+    if (nextProjectId === currentProjectId) {
+      setConversationNotice({ type: "success", message: "Conversation scope unchanged" });
+      return;
+    }
+
+    setMovingConversationId(conversation.id);
+    setConversationNotice(null);
+
+    const response = await fetch("/api/conversations", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        conversationId: conversation.id,
+        projectId: nextProjectId,
+      }),
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setMovingConversationId(null);
+      setConversationNotice({
+        type: "error",
+        message: result.error || "Failed to move conversation.",
+      });
+      return;
+    }
+
+    const updatedConversation = result.conversation as Conversation;
+    const remainsInCurrentScope = scopedProjectId
+      ? updatedConversation.project_id === scopedProjectId
+      : !updatedConversation.project_id;
+
+    setMovingConversationId(null);
+    setOpenMenuId(null);
+    setConversationNotice({
+      type: "success",
+      message: updatedConversation.project_id ? "Conversation moved to project" : "Conversation moved to Global Chat",
+    });
+
+    if (remainsInCurrentScope) {
+      setConversations((prev) =>
+        prev.map((currentConversation) =>
+          currentConversation.id === updatedConversation.id
+            ? { ...currentConversation, ...updatedConversation }
+            : currentConversation
+        )
+      );
+      setConversationProjectSelections((prev) => ({
+        ...prev,
+        [updatedConversation.id]: updatedConversation.project_id ?? "",
+      }));
+      return;
+    }
+
+    const remainingConversations = conversations.filter(
+      (currentConversation) => currentConversation.id !== updatedConversation.id
+    );
+
+    setConversations(remainingConversations);
+    syncConversationProjectSelections(remainingConversations);
+
+    if (activeConversationId === updatedConversation.id) {
+      const nextConversation = remainingConversations[0];
+
+      if (nextConversation) {
+        setActiveConversationId(nextConversation.id);
+        setMessages([]);
+        await loadMessages(nextConversation.id);
+      } else {
+        setActiveConversationId(null);
+        setMessages([]);
+        await createNewChat(scopedProjectId);
+      }
+    }
+  }
+
+  function getConversationScopeLabel(conversation: Conversation) {
+    if (!conversation.project_id) {
+      return "Global Chat";
+    }
+
+    if (conversation.project_id === scopedProjectId && activeProjectName) {
+      return activeProjectName;
+    }
+
+    return projects.find((project) => project.id === conversation.project_id)?.name || "Project Chat";
+  }
+
   useEffect(() => {
     async function initializeChat() {
-      const query = scopeConversationQuery(
-        supabase
-        .from("conversations")
-        .select("*")
-        .order("created_at", { ascending: false }),
-        scopedProjectId
-      );
+      const params = new URLSearchParams();
 
-      const { data, error } = await query;
+      if (scopedProjectId) {
+        params.set("projectId", scopedProjectId);
+      }
 
-      if (error) {
-        console.error(error);
+      const response = await fetch(`/api/conversations${params.size > 0 ? `?${params.toString()}` : ""}`, {
+        cache: "no-store",
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error(result.error || "failed to load conversations");
         return;
       }
 
+      const data = (result ?? []) as Conversation[];
+
       if (data && data.length > 0) {
         setConversations(data);
+        syncConversationProjectSelections(data);
         setActiveConversationId(data[0].id);
         return;
       }
@@ -243,11 +405,16 @@ function ChatPageContent() {
       }
 
       setConversations([newConversation]);
+      syncConversationProjectSelections([newConversation]);
       setActiveConversationId(newConversation.id);
     }
 
     initializeChat();
   }, [scopedProjectId]);
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
 
   useEffect(() => {
     const newFlag = searchParams?.get("new");
@@ -396,8 +563,8 @@ function ChatPageContent() {
     setMemoryNotice({ type: "success", message: "Memory saved" });
   }
 
-  const pinnedConversations = conversations.filter((c) => Boolean((c as any).pinned));
-  const recentConversations = conversations.filter((c) => !Boolean((c as any).pinned));
+  const pinnedConversations = conversations.filter((conversation) => Boolean(conversation.pinned));
+  const recentConversations = conversations.filter((conversation) => !Boolean(conversation.pinned));
 
   
 
@@ -482,14 +649,169 @@ function ChatPageContent() {
         <h2 className="text-sm font-semibold">Conversations</h2>
       </div>
 
+      {conversationNotice && (
+        <div className={`mb-3 rounded-xl border px-3 py-2 text-xs ${conversationNotice.type === "success" ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-red-500/30 bg-red-500/10 text-red-300"}`}>
+          {conversationNotice.message}
+        </div>
+      )}
+
       <div className="flex-1 overflow-auto px-0 pt-0 pb-4">
-        <ConversationList
-          activeConversationId={activeConversationId || undefined}
-          onSelect={async (id) => {
-            setActiveConversationId(id);
-            await loadMessages(id);
-          }}
-        />
+        {pinnedConversations.length > 0 && (
+          <>
+            <h3 className="mb-2 text-xs uppercase tracking-wider text-slate-500">Pinned</h3>
+            <div className="mb-4 space-y-2">
+              {pinnedConversations.map((conversation) => (
+                <div
+                  key={conversation.id}
+                  className={`rounded-xl border p-3 text-sm ${activeConversationId === conversation.id ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-200" : "border-slate-800 bg-slate-800/70 text-slate-200"}`}
+                >
+                  <div className="flex items-start gap-2">
+                    <button
+                      onClick={async () => {
+                        setActiveConversationId(conversation.id);
+                        await loadMessages(conversation.id);
+                      }}
+                      className="flex-1 text-left"
+                    >
+                      <div className="truncate font-medium">{conversation.title}</div>
+                      <div className="mt-1 text-xs text-slate-500">{new Date(conversation.created_at).toLocaleString()}</div>
+                    </button>
+
+                    <button
+                      onClick={() => setOpenMenuId(openMenuId === conversation.id ? null : conversation.id)}
+                      className="rounded-lg border border-slate-700 p-1.5 text-slate-400 transition hover:text-white"
+                      aria-label="Conversation actions"
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="mb-2 inline-flex rounded-full border border-slate-700 px-2.5 py-1 text-[11px] uppercase tracking-wide text-slate-300">
+                      {getConversationScopeLabel(conversation)}
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <select
+                        value={conversationProjectSelections[conversation.id] ?? conversation.project_id ?? ""}
+                        onChange={(e) => setConversationProjectSelections((prev) => ({
+                          ...prev,
+                          [conversation.id]: e.target.value,
+                        }))}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+                      >
+                        <option value="">Global Chat</option>
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        onClick={() => updateConversationProject(conversation)}
+                        disabled={movingConversationId === conversation.id}
+                        className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm font-semibold text-yellow-300 transition hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {movingConversationId === conversation.id ? "Saving..." : "Save / Move"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {openMenuId === conversation.id && (
+                    <div className="mt-3 rounded-xl border border-slate-700 bg-slate-900/90 p-2 shadow-xl">
+                      <button onClick={() => togglePin(conversation)} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-800">
+                        {conversation.pinned ? "Unpin" : "Pin"}
+                      </button>
+                      <button onClick={() => { renameChat(conversation.id, conversation.title); setOpenMenuId(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-800">Rename</button>
+                      <button onClick={() => { deleteChat(conversation.id); setOpenMenuId(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-300 transition hover:bg-red-950/40">Delete</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        <h3 className="mb-2 text-sm text-slate-400">Recent Chats</h3>
+
+        <div className="space-y-2">
+          {recentConversations.map((conversation) => (
+            <div
+              key={conversation.id}
+              className={`rounded-xl border p-3 text-sm ${activeConversationId === conversation.id ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-200" : "border-slate-800 bg-slate-800/70 text-slate-200"}`}
+            >
+              <div className="flex items-start gap-2">
+                <button
+                  onClick={async () => {
+                    setActiveConversationId(conversation.id);
+                    await loadMessages(conversation.id);
+                  }}
+                  className="flex-1 text-left"
+                >
+                  <div className="truncate font-medium">{conversation.title}</div>
+                  <div className="mt-1 text-xs text-slate-500">{new Date(conversation.created_at).toLocaleString()}</div>
+                </button>
+
+                <button
+                  onClick={() => setOpenMenuId(openMenuId === conversation.id ? null : conversation.id)}
+                  className="rounded-lg border border-slate-700 p-1.5 text-slate-400 transition hover:text-white"
+                  aria-label="Conversation actions"
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+              </div>
+
+              <div className="mt-3">
+                <div className="mb-2 inline-flex rounded-full border border-slate-700 px-2.5 py-1 text-[11px] uppercase tracking-wide text-slate-300">
+                  {getConversationScopeLabel(conversation)}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <select
+                    value={conversationProjectSelections[conversation.id] ?? conversation.project_id ?? ""}
+                    onChange={(e) => setConversationProjectSelections((prev) => ({
+                      ...prev,
+                      [conversation.id]: e.target.value,
+                    }))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="">Global Chat</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={() => updateConversationProject(conversation)}
+                    disabled={movingConversationId === conversation.id}
+                    className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm font-semibold text-yellow-300 transition hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {movingConversationId === conversation.id ? "Saving..." : "Save / Move"}
+                  </button>
+                </div>
+              </div>
+
+              {openMenuId === conversation.id && (
+                <div className="mt-3 rounded-xl border border-slate-700 bg-slate-900/90 p-2 shadow-xl">
+                  <button onClick={() => togglePin(conversation)} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-800">
+                    {conversation.pinned ? "Unpin" : "Pin"}
+                  </button>
+                  <button onClick={() => { renameChat(conversation.id, conversation.title); setOpenMenuId(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-800">Rename</button>
+                  <button onClick={() => { deleteChat(conversation.id); setOpenMenuId(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-300 transition hover:bg-red-950/40">Delete</button>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {recentConversations.length === 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-4 text-sm text-slate-400">
+              No recent conversations in this scope.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   </aside>
