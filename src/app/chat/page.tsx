@@ -1021,21 +1021,21 @@ function ChatPageContent() {
     </div>
   )}
 
-    <div className="space-y-4 pb-24 md:pb-28">
+    <div className="mx-auto w-full max-w-4xl space-y-5 pb-24 md:pb-28">
       {messages.map((msg, index) => (
           <div
             key={index}
-            className={`max-w-3xl rounded-2xl border p-4 text-sm shadow-sm md:p-5 md:text-[15px] ${
+            className={`w-full rounded-[1.6rem] border px-5 py-4 shadow-sm md:px-6 md:py-5 ${
               msg.role === "user"
-  ? "ml-auto max-w-lg bg-gradient-to-br from-yellow-400 to-yellow-600 text-slate-950 border-yellow-400/30"
-                : "border-slate-800 bg-slate-900/80 text-slate-200"
+  ? "ml-auto max-w-2xl bg-gradient-to-br from-yellow-400 to-yellow-600 text-slate-950 border-yellow-400/30"
+                : "max-w-4xl border-slate-800 bg-slate-900/85 text-slate-200"
             }`}
           >
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-inherit/80">
               {msg.role === "user" ? "Almond" : "Gatekeeper AI"}
             </p>
 
-            <div className="prose prose-sm prose-invert max-w-none prose-p:mb-3 prose-p:leading-6 prose-li:mb-1 prose-headings:text-white prose-headings:font-semibold prose-strong:text-yellow-300 prose-table:block prose-table:w-full prose-table:overflow-hidden prose-table:rounded-xl prose-table:border prose-table:border-slate-700 prose-thead:bg-slate-800 prose-th:border prose-th:border-slate-700 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:text-xs prose-th:font-semibold prose-th:text-slate-200 prose-td:border prose-td:border-slate-800 prose-td:px-3 prose-td:py-2 prose-td:text-sm prose-td:text-slate-300">
+            <div className="chat-markdown max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
             </div>
 
@@ -1058,7 +1058,7 @@ function ChatPageContent() {
   </div>
 
   <div className="sticky bottom-0 z-20 shrink-0 border-t border-slate-800 bg-[#020617]/95 px-4 py-3 backdrop-blur">
-    <div className="mx-auto w-full max-w-3xl">
+    <div className="mx-auto w-full max-w-4xl">
       {loading && (
         <div className="mb-3 rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-400">
           Gatekeeper AI is thinking...
