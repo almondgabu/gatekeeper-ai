@@ -35,6 +35,7 @@ type Conversation = {
   id: number;
   title: string;
   created_at: string;
+  project_id?: string | null;
   pinned?: boolean;
 };
 
@@ -54,11 +55,26 @@ function ChatPageContent() {
   const [conversationPanelOpen, setConversationPanelOpen] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
 
-  async function loadConversations() {
-    const { data, error } = await supabase
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const scopedProjectId = searchParams?.get("projectId")?.trim() || null;
+
+  function scopeConversationQuery(query: any, projectId: string | null) {
+    return projectId
+      ? query.eq("project_id", projectId)
+      : query.is("project_id", null);
+  }
+
+  async function loadConversations(projectId: string | null = scopedProjectId) {
+    const query = scopeConversationQuery(
+      supabase
       .from("conversations")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }),
+      projectId
+    );
+
+    const { data, error } = await query;
 
     if (error) {
       console.error(error);
@@ -83,10 +99,10 @@ function ChatPageContent() {
     setMessages((data || []) as Message[]);
   }
 
-  async function createNewChat() {
+  async function createNewChat(projectId: string | null = scopedProjectId) {
     const { data, error } = await supabase
       .from("conversations")
-      .insert([{ title: "New Chat" }])
+      .insert([{ title: "New Chat", project_id: projectId }])
       .select()
       .single();
 
@@ -97,7 +113,7 @@ function ChatPageContent() {
 
     setActiveConversationId(data.id);
     setMessages([]);
-    await loadConversations();
+    await loadConversations(projectId);
   }
 
   async function renameChat(conversationId: number, currentTitle: string) {
@@ -115,7 +131,7 @@ function ChatPageContent() {
       return;
     }
 
-    await loadConversations();
+    await loadConversations(scopedProjectId);
   }
 
   async function deleteChat(conversationId: number) {
@@ -149,7 +165,7 @@ function ChatPageContent() {
       setMessages([]);
     }
 
-    await loadConversations();
+    await loadConversations(scopedProjectId);
   }
 
   async function autoRenameConversation(userMessage: string) {
@@ -174,15 +190,20 @@ function ChatPageContent() {
       return;
     }
 
-    await loadConversations();
+    await loadConversations(scopedProjectId);
   }
 
   useEffect(() => {
     async function initializeChat() {
-      const { data, error } = await supabase
+      const query = scopeConversationQuery(
+        supabase
         .from("conversations")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false }),
+        scopedProjectId
+      );
+
+      const { data, error } = await query;
 
       if (error) {
         console.error(error);
@@ -197,7 +218,7 @@ function ChatPageContent() {
 
       const { data: newConversation, error: createError } = await supabase
         .from("conversations")
-        .insert([{ title: "New Chat" }])
+        .insert([{ title: "New Chat", project_id: scopedProjectId }])
         .select()
         .single();
 
@@ -211,26 +232,19 @@ function ChatPageContent() {
     }
 
     initializeChat();
-  }, []);
-
-  // Handle lightweight URL triggers: ?new=1 to create a chat, ?conversation=<id> to open
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  }, [scopedProjectId]);
 
   useEffect(() => {
     const newFlag = searchParams?.get("new");
     const conv = searchParams?.get("conversation");
-    const projectIdParam = searchParams?.get("projectId");
-    const parsedProjectId = projectIdParam?.trim() || null;
+    setActiveProjectId(scopedProjectId);
 
-    setActiveProjectId(parsedProjectId);
-
-    const baseChatUrl = !parsedProjectId
+    const baseChatUrl = !scopedProjectId
       ? "/chat"
-      : `/chat?projectId=${parsedProjectId}`;
+      : `/chat?projectId=${scopedProjectId}`;
 
     if (newFlag) {
-      createNewChat().then(() => router.replace(baseChatUrl));
+      createNewChat(scopedProjectId).then(() => router.replace(baseChatUrl));
       return;
     }
 
@@ -244,7 +258,7 @@ function ChatPageContent() {
       router.replace(baseChatUrl);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, scopedProjectId]);
 
   useEffect(() => {
     async function loadActiveProjectName(projectId: string) {
@@ -263,13 +277,13 @@ function ChatPageContent() {
       setActiveProjectName(data?.name || null);
     }
 
-    if (!activeProjectId) {
+    if (!scopedProjectId) {
       setActiveProjectName(null);
       return;
     }
 
-    loadActiveProjectName(activeProjectId);
-  }, [activeProjectId]);
+    loadActiveProjectName(scopedProjectId);
+  }, [scopedProjectId]);
 
   useEffect(() => {
     if (activeConversationId) {
@@ -317,7 +331,8 @@ function ChatPageContent() {
       body: JSON.stringify({
         message: userMessage.content,
         model: selectedModel,
-        projectId: activeProjectId,
+        conversationId: activeConversationId,
+        projectId: scopedProjectId,
       }),
     });
 
