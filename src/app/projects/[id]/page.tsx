@@ -6,13 +6,17 @@ import remarkGfm from "remark-gfm";
 import { use, useEffect, useState } from "react";
 import {
   Brain,
+  CheckCircle2,
   ChevronRight,
   Copy,
   Download,
   Eye,
   FileText,
   FolderOpen,
+  ListTodo,
   MessageSquare,
+  Plus,
+  RotateCcw,
   RotateCw,
   Star,
   Trash2,
@@ -55,13 +59,25 @@ type ProjectMemory = {
 
 type ActivityItem = {
   id: string;
-  type: "memory" | "conversation" | "document" | "brief";
+  type: "memory" | "conversation" | "document" | "brief" | "task";
   title: string;
   href?: string;
   timestamp: number;
   createdAt?: string | null;
   meta: string;
   summary: string;
+};
+
+type ProjectTask = {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  due_date: string | null;
+  source_conversation_id: number | null;
+  created_at: string;
+  updated_at: string;
 };
 
 const MEMORY_TYPE_FILTERS = ["all", "technical", "decision", "legal", "financial", "property"] as const;
@@ -80,8 +96,16 @@ export default function ProjectDetailPage({
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [conversations, setConversations] = useState<ProjectConversation[]>([]);
   const [memories, setMemories] = useState<ProjectMemory[]>([]);
+  const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [memorySearch, setMemorySearch] = useState("");
   const [memoryTypeFilter, setMemoryTypeFilter] = useState<MemoryTypeFilter>("all");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [taskDueDate, setTaskDueDate] = useState("");
+  const [taskError, setTaskError] = useState<string | null>(null);
+  const [savingTask, setSavingTask] = useState(false);
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [projectBrief, setProjectBrief] = useState("");
   const [briefError, setBriefError] = useState<string | null>(null);
   const [generatingBrief, setGeneratingBrief] = useState(false);
@@ -90,6 +114,7 @@ export default function ProjectDetailPage({
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMemories, setLoadingMemories] = useState(false);
+  const [loadingTasks, setLoadingTasks] = useState(false);
   const [loadingProject, setLoadingProject] = useState(true);
 
   async function loadProject() {
@@ -154,13 +179,35 @@ export default function ProjectDetailPage({
     setMemories((result.memories ?? []) as ProjectMemory[]);
   }
 
+  async function loadTasks() {
+    if (!projectId) {
+      setLoadingTasks(false);
+      return;
+    }
+
+    const response = await fetch(`/api/project-tasks?projectId=${projectId}`, {
+      cache: "no-store",
+    });
+    const result = await response.json();
+    setLoadingTasks(false);
+
+    if (!response.ok) {
+      console.error(result.error || "failed to load project tasks");
+      return;
+    }
+
+    setTasks((result.tasks ?? []) as ProjectTask[]);
+  }
+
   useEffect(() => {
     setLoadingDocuments(true);
     setLoadingConversations(true);
     setLoadingMemories(true);
+    setLoadingTasks(true);
     loadProject();
     loadConversations();
     loadMemories();
+    loadTasks();
   }, [projectId]);
 
   async function unassignDocument(documentId: string) {
@@ -280,10 +327,112 @@ export default function ProjectDetailPage({
     }
   }
 
+  async function createTask(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const normalizedTitle = taskTitle.trim();
+
+    if (!projectId || !normalizedTitle) {
+      setTaskError("Task title is required.");
+      return;
+    }
+
+    setSavingTask(true);
+    setTaskError(null);
+
+    const response = await fetch("/api/project-tasks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        projectId,
+        title: normalizedTitle,
+        description: taskDescription.trim(),
+        dueDate: taskDueDate || null,
+      }),
+    });
+
+    const result = await response.json();
+    setSavingTask(false);
+
+    if (!response.ok) {
+      setTaskError(result.error || "Failed to create task.");
+      return;
+    }
+
+    const nextTask = result.task as ProjectTask;
+    setTasks((currentTasks) => [nextTask, ...currentTasks]);
+    setTaskTitle("");
+    setTaskDescription("");
+    setTaskDueDate("");
+  }
+
+  async function updateTaskStatus(taskId: string, status: "open" | "completed") {
+    setUpdatingTaskId(taskId);
+    setTaskError(null);
+
+    const response = await fetch("/api/project-tasks", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ taskId, status }),
+    });
+
+    const result = await response.json();
+    setUpdatingTaskId(null);
+
+    if (!response.ok) {
+      setTaskError(result.error || "Failed to update task.");
+      return;
+    }
+
+    const nextTask = result.task as ProjectTask;
+    setTasks((currentTasks) =>
+      currentTasks
+        .map((task) => (task.id === nextTask.id ? nextTask : task))
+        .sort((left, right) => getTimestamp(right.updated_at) - getTimestamp(left.updated_at))
+    );
+  }
+
+  async function deleteTask(taskId: string) {
+    const confirmed = confirm("Delete this task?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingTaskId(taskId);
+    setTaskError(null);
+
+    const response = await fetch("/api/project-tasks", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ taskId }),
+    });
+
+    const result = await response.json();
+    setDeletingTaskId(null);
+
+    if (!response.ok) {
+      setTaskError(result.error || "Failed to delete task.");
+      return;
+    }
+
+    setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId));
+  }
+
   const latestDocument = documents[0];
   const documentCount = project?.documentCount ?? documents.length;
   const conversationCount = conversations.length;
   const memoryCount = memories.length;
+  const taskCount = tasks.length;
+  const openTasks = tasks.filter((task) => task.status !== "completed");
+  const completedTasks = tasks.filter((task) => task.status === "completed");
+  const openTaskCount = openTasks.length;
   const normalizedMemorySearch = memorySearch.trim().toLowerCase();
   const filteredMemories = memories.filter((memory) => {
     const matchesType =
@@ -305,6 +454,7 @@ export default function ProjectDetailPage({
     documents,
     conversations,
     memories,
+    tasks,
     projectId,
     briefAvailable,
     briefGeneratedAt,
@@ -316,6 +466,29 @@ export default function ProjectDetailPage({
     recentActivity,
   });
   const aiSuggestions = [
+    taskCount === 0
+      ? {
+          id: "create-first-task",
+          title: "Create your first project task",
+          description: "Track the next concrete action directly inside this project workspace.",
+          actionLabel: "Add Task",
+          onClick: () => {
+            document.getElementById("project-task-title")?.focus();
+            document.getElementById("project-tasks")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          },
+        }
+      : null,
+    openTaskCount > 0
+      ? {
+          id: "open-tasks",
+          title: `${openTaskCount} open project task${openTaskCount === 1 ? "" : "s"}`,
+          description: "Review the current open task list and close work as decisions are completed.",
+          actionLabel: "View Tasks",
+          onClick: () => {
+            document.getElementById("project-tasks")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          },
+        }
+      : null,
     documentCount === 0
       ? {
           id: "upload-documents",
@@ -803,6 +976,203 @@ export default function ProjectDetailPage({
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
+          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex items-center gap-3">
+              <ListTodo className="text-blue-400" size={24} />
+              <div>
+                <h2 className="text-2xl font-semibold">Project Tasks</h2>
+                <p className="text-sm text-slate-400">
+                  Lightweight project tasks tracked inside this workspace only.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-sm">
+              <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 font-semibold text-blue-200">
+                Open: {openTaskCount}
+              </span>
+              <span className="rounded-full border border-slate-700 px-4 py-2 font-semibold text-slate-200">
+                Completed: {completedTasks.length}
+              </span>
+            </div>
+          </div>
+
+          <div id="project-tasks" className="rounded-2xl border border-dashed border-slate-700 p-6 md:p-8">
+            <form onSubmit={createTask} className="mb-6 grid gap-4 rounded-2xl border border-slate-800 bg-slate-950 p-5">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+                <div>
+                  <label htmlFor="project-task-title" className="mb-2 block text-sm font-medium text-slate-200">
+                    Task title
+                  </label>
+                  <input
+                    id="project-task-title"
+                    value={taskTitle}
+                    onChange={(event) => setTaskTitle(event.target.value)}
+                    placeholder="Prepare zoning follow-up"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white placeholder:text-slate-500"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="project-task-due-date" className="mb-2 block text-sm font-medium text-slate-200">
+                    Due date
+                  </label>
+                  <input
+                    id="project-task-due-date"
+                    type="date"
+                    value={taskDueDate}
+                    onChange={(event) => setTaskDueDate(event.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="project-task-description" className="mb-2 block text-sm font-medium text-slate-200">
+                  Description
+                </label>
+                <textarea
+                  id="project-task-description"
+                  value={taskDescription}
+                  onChange={(event) => setTaskDescription(event.target.value)}
+                  placeholder="Optional details, owner notes, or next step context."
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white placeholder:text-slate-500"
+                />
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  {taskError && (
+                    <p className="text-sm text-red-300">{taskError}</p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingTask || !projectId}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-5 py-3 text-sm font-semibold text-blue-200 transition hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Plus size={16} />
+                  {savingTask ? "Saving..." : "Add Task"}
+                </button>
+              </div>
+            </form>
+
+            {loadingTasks || loadingProject ? (
+              <p className="text-sm text-slate-400">Loading project tasks...</p>
+            ) : taskCount === 0 ? (
+              <p className="text-sm text-slate-400">No tasks yet.</p>
+            ) : (
+              <div className="grid gap-6 xl:grid-cols-2">
+                <div>
+                  <h3 className="mb-4 text-lg font-semibold text-white">Open Tasks</h3>
+                  {openTasks.length === 0 ? (
+                    <p className="text-sm text-slate-400">No open tasks.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {openTasks.map((task) => (
+                        <div key={task.id} className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                            <div className="min-w-0">
+                              <h4 className="font-semibold text-white">{task.title}</h4>
+                              {task.description && (
+                                <p className="mt-2 text-sm text-slate-300">{task.description}</p>
+                              )}
+                              <p className="mt-3 text-xs text-slate-500">
+                                Created {new Date(task.created_at).toLocaleDateString()}
+                                {task.due_date ? ` • Due ${new Date(task.due_date).toLocaleDateString()}` : ""}
+                              </p>
+                              {task.source_conversation_id ? (
+                                <Link
+                                  href={`/chat?conversationId=${task.source_conversation_id}&projectId=${encodeURIComponent(projectId)}`}
+                                  className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-yellow-300 transition hover:text-yellow-200"
+                                >
+                                  Open Source Conversation
+                                  <ChevronRight size={14} />
+                                </Link>
+                              ) : null}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateTaskStatus(task.id, "completed")}
+                                disabled={updatingTaskId === task.id}
+                                className="inline-flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm font-medium text-green-200 transition hover:bg-green-500/20 disabled:opacity-60"
+                              >
+                                <CheckCircle2 size={15} />
+                                Done
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteTask(task.id)}
+                                disabled={deletingTaskId === task.id}
+                                className="rounded-lg bg-red-600 p-2 text-white transition hover:bg-red-500 disabled:opacity-60"
+                                title="Delete task"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="mb-4 text-lg font-semibold text-white">Completed Tasks</h3>
+                  {completedTasks.length === 0 ? (
+                    <p className="text-sm text-slate-400">No completed tasks yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {completedTasks.map((task) => (
+                        <div key={task.id} className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                            <div className="min-w-0">
+                              <h4 className="font-semibold text-white">{task.title}</h4>
+                              {task.description && (
+                                <p className="mt-2 text-sm text-slate-300">{task.description}</p>
+                              )}
+                              <p className="mt-3 text-xs text-slate-500">
+                                Completed {new Date(task.updated_at).toLocaleDateString()}
+                                {task.due_date ? ` • Due ${new Date(task.due_date).toLocaleDateString()}` : ""}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateTaskStatus(task.id, "open")}
+                                disabled={updatingTaskId === task.id}
+                                className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-60"
+                              >
+                                <RotateCcw size={15} />
+                                Reopen
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteTask(task.id)}
+                                disabled={deletingTaskId === task.id}
+                                className="rounded-lg bg-red-600 p-2 text-white transition hover:bg-red-500 disabled:opacity-60"
+                                title="Delete task"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
           <div className="mb-6 flex items-center gap-3">
             <Brain className="text-green-400" size={24} />
             <div>
@@ -1054,6 +1424,7 @@ function buildRecentActivity({
   documents,
   conversations,
   memories,
+  tasks,
   projectId,
   briefAvailable,
   briefGeneratedAt,
@@ -1061,6 +1432,7 @@ function buildRecentActivity({
   documents: ProjectDocument[];
   conversations: ProjectConversation[];
   memories: ProjectMemory[];
+  tasks: ProjectTask[];
   projectId: string;
   briefAvailable: boolean;
   briefGeneratedAt: number | null;
@@ -1102,6 +1474,27 @@ function buildRecentActivity({
     summary: "Memory saved",
   }));
 
+  const taskActivity = tasks.map((task) => {
+    const isCompleted = task.status === "completed" && getTimestamp(task.updated_at) >= getTimestamp(task.created_at);
+
+    return {
+      id: `task-${task.id}`,
+      type: "task" as const,
+      title: task.title,
+      href: task.source_conversation_id
+        ? `/chat?conversationId=${task.source_conversation_id}&projectId=${encodeURIComponent(projectId)}`
+        : undefined,
+      timestamp: isCompleted ? getTimestamp(task.updated_at) : getTimestamp(task.created_at),
+      createdAt: isCompleted ? task.updated_at : task.created_at,
+      meta: task.due_date
+        ? `${isCompleted ? "Completed" : "Open task"} • Due ${new Date(task.due_date).toLocaleDateString()}`
+        : isCompleted
+          ? "Task completed"
+          : "Open task",
+      summary: isCompleted ? "Task completed" : "Task created",
+    };
+  });
+
   const briefActivity = briefAvailable && briefGeneratedAt
     ? [{
         id: `brief-${briefGeneratedAt}`,
@@ -1114,7 +1507,7 @@ function buildRecentActivity({
       }]
     : [];
 
-  return [...briefActivity, ...memoryActivity, ...conversationActivity, ...documentActivity]
+  return [...briefActivity, ...taskActivity, ...memoryActivity, ...conversationActivity, ...documentActivity]
     .filter((activity) => activity.timestamp > 0)
     .sort((left, right) => right.timestamp - left.timestamp)
     .slice(0, 8);
@@ -1210,6 +1603,8 @@ function getActivityDotClass(type: ActivityItem["type"]) {
       return "bg-blue-400";
     case "brief":
       return "bg-emerald-300";
+    case "task":
+      return "bg-blue-400";
     default:
       return "bg-slate-400";
   }
