@@ -55,12 +55,13 @@ type ProjectMemory = {
 
 type ActivityItem = {
   id: string;
-  type: "memory" | "conversation" | "document";
+  type: "memory" | "conversation" | "document" | "brief";
   title: string;
   href?: string;
   timestamp: number;
   createdAt?: string | null;
   meta: string;
+  summary: string;
 };
 
 const MEMORY_TYPE_FILTERS = ["all", "technical", "decision", "legal", "financial", "property"] as const;
@@ -84,6 +85,7 @@ export default function ProjectDetailPage({
   const [projectBrief, setProjectBrief] = useState("");
   const [briefError, setBriefError] = useState<string | null>(null);
   const [generatingBrief, setGeneratingBrief] = useState(false);
+  const [briefGeneratedAt, setBriefGeneratedAt] = useState<number | null>(null);
   const [copiedBrief, setCopiedBrief] = useState(false);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(false);
@@ -246,6 +248,7 @@ export default function ProjectDetailPage({
     }
 
     setProjectBrief(typeof result.brief === "string" ? result.brief : "");
+    setBriefGeneratedAt(Date.now());
   }
 
   async function copyProjectBrief() {
@@ -297,11 +300,14 @@ export default function ProjectDetailPage({
     const searchableText = `${memory.title} ${memory.content} ${memory.memory_type}`.toLowerCase();
     return searchableText.includes(normalizedMemorySearch);
   });
+  const briefAvailable = Boolean(projectBrief.trim());
   const recentActivity = buildRecentActivity({
     documents,
     conversations,
     memories,
     projectId,
+    briefAvailable,
+    briefGeneratedAt,
   });
   const projectHealth = getProjectHealth({
     documentCount,
@@ -309,7 +315,6 @@ export default function ProjectDetailPage({
     memoryCount,
     recentActivity,
   });
-  const briefAvailable = Boolean(projectBrief.trim());
   const aiSuggestions = [
     documentCount === 0
       ? {
@@ -549,41 +554,44 @@ export default function ProjectDetailPage({
                 <FolderOpen className="text-yellow-400" size={20} />
                 <div>
                   <p className="text-sm text-slate-400">Recent Activity</p>
-                  <h3 className="text-xl font-semibold text-white">Latest project signals</h3>
+                  <h3 className="text-xl font-semibold text-white">Latest project timeline</h3>
                 </div>
               </div>
 
               {recentActivity.length === 0 ? (
-                <p className="text-sm text-slate-400">
-                  No activity yet. Upload a document, start a conversation, or save a memory to populate the timeline.
-                </p>
+                <p className="text-sm text-slate-400">No recent activity yet.</p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {recentActivity.map((activity) => (
-                    <div
-                      key={activity.id}
-                      className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            {activity.type}
-                          </p>
-                          <p className="mt-2 truncate font-medium text-white">{activity.title}</p>
-                          <p className="mt-2 text-sm text-slate-400">{activity.meta}</p>
-                        </div>
+                    <div key={activity.id} className="flex gap-4">
+                      <div className="flex flex-col items-center">
+                        <span className={`mt-1 inline-flex h-3 w-3 rounded-full ${getActivityDotClass(activity.type)}`} />
+                        <span className="mt-2 h-full min-h-[36px] w-px bg-slate-800 last:hidden" />
+                      </div>
 
-                        <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
-                          <p className="text-xs text-slate-500">{formatRelativeTime(activity.timestamp)}</p>
-                          {activity.href && (
-                            <Link
-                              href={activity.href}
-                              className="inline-flex items-center gap-2 text-sm font-medium text-yellow-300 transition hover:text-yellow-200"
-                            >
-                              Open
-                              <ChevronRight size={14} />
-                            </Link>
-                          )}
+                      <div className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              {activity.type}
+                            </p>
+                            <p className="mt-2 font-medium text-white">{activity.summary}</p>
+                            <p className="mt-2 truncate text-sm text-slate-300">{activity.title}</p>
+                            <p className="mt-2 text-sm text-slate-400">{activity.meta}</p>
+                          </div>
+
+                          <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+                            <p className="text-xs text-slate-500">{formatRelativeTime(activity.timestamp)}</p>
+                            {activity.href && (
+                              <Link
+                                href={activity.href}
+                                className="inline-flex items-center gap-2 text-sm font-medium text-yellow-300 transition hover:text-yellow-200"
+                              >
+                                Open
+                                <ChevronRight size={14} />
+                              </Link>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1047,11 +1055,15 @@ function buildRecentActivity({
   conversations,
   memories,
   projectId,
+  briefAvailable,
+  briefGeneratedAt,
 }: {
   documents: ProjectDocument[];
   conversations: ProjectConversation[];
   memories: ProjectMemory[];
   projectId: string;
+  briefAvailable: boolean;
+  briefGeneratedAt: number | null;
 }): ActivityItem[] {
   const documentActivity = documents.map((document) => ({
     id: `document-${document.id}`,
@@ -1060,6 +1072,7 @@ function buildRecentActivity({
     timestamp: getTimestamp(document.created_at),
     createdAt: document.created_at,
     meta: `Document uploaded${document.status ? ` • ${document.status}` : ""}`,
+    summary: "Document uploaded",
   }));
 
   const conversationActivity = conversations.map((conversation) => ({
@@ -1073,6 +1086,7 @@ function buildRecentActivity({
       typeof conversation.messageCount === "number"
         ? `${conversation.messageCount} message${conversation.messageCount === 1 ? "" : "s"}`
         : "Project conversation",
+    summary: "Conversation",
   }));
 
   const memoryActivity = memories.map((memory) => ({
@@ -1085,12 +1099,25 @@ function buildRecentActivity({
     timestamp: getTimestamp(memory.created_at),
     createdAt: memory.created_at,
     meta: `${memory.memory_type} memory • Importance ${memory.importance}`,
+    summary: "Memory saved",
   }));
 
-  return [...memoryActivity, ...conversationActivity, ...documentActivity]
+  const briefActivity = briefAvailable && briefGeneratedAt
+    ? [{
+        id: `brief-${briefGeneratedAt}`,
+        type: "brief" as const,
+        title: "Project Brief",
+        timestamp: briefGeneratedAt,
+        createdAt: new Date(briefGeneratedAt).toISOString(),
+        meta: "Brief generated in the current page state",
+        summary: "Brief generated",
+      }]
+    : [];
+
+  return [...briefActivity, ...memoryActivity, ...conversationActivity, ...documentActivity]
     .filter((activity) => activity.timestamp > 0)
     .sort((left, right) => right.timestamp - left.timestamp)
-    .slice(0, 5);
+    .slice(0, 8);
 }
 
 function getProjectHealth({
@@ -1171,6 +1198,21 @@ function formatRelativeTime(timestamp: number) {
   }
 
   return new Date(timestamp).toLocaleDateString();
+}
+
+function getActivityDotClass(type: ActivityItem["type"]) {
+  switch (type) {
+    case "memory":
+      return "bg-green-400";
+    case "conversation":
+      return "bg-yellow-400";
+    case "document":
+      return "bg-blue-400";
+    case "brief":
+      return "bg-emerald-300";
+    default:
+      return "bg-slate-400";
+  }
 }
 
 function fallbackCopyText(value: string) {
