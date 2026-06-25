@@ -6,6 +6,7 @@ import {
   MessageSquare,
   FolderKanban,
   Library,
+  BookOpen,
   Settings,
   Shield,
   Plus,
@@ -21,6 +22,7 @@ const menuItems = [
   { name: "Chat", href: "/chat", icon: MessageSquare },
   { name: "Projects", href: "/projects", icon: FolderKanban },
   { name: "Knowledge Vault", href: "/vault", icon: Library },
+  { name: "User Guide", href: "/guide", icon: BookOpen },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
