@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
+import { createEmbedding } from "@/lib/embeddings";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
+
+function buildProjectMemoryEmbeddingInput(memoryType: string, title: string, content: string) {
+  return [`Type: ${memoryType}`, `Title: ${title}`, `Content: ${content}`].join("\n");
+}
 
 type ProjectMemoryRow = {
   id: string;
@@ -79,6 +84,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "importance must be an integer" }, { status: 400 });
   }
 
+  let embedding: number[] | null = null;
+
+  try {
+    embedding = await createEmbedding(
+      buildProjectMemoryEmbeddingInput(memoryType, title, content)
+    );
+  } catch (error: any) {
+    console.error("project memory embedding failed", error?.message ?? error);
+  }
+
   const { data, error } = await supabaseAdmin
     .from("project_memories")
     .insert({
@@ -88,6 +103,7 @@ export async function POST(request: Request) {
       content,
       source_conversation_id: sourceConversationId,
       importance,
+      embedding,
     })
     .select("id, project_id, memory_type, title, content, source_conversation_id, importance, created_at, updated_at")
     .single();

@@ -24,8 +24,19 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 
 type Message = {
+  id: string;
   role: "user" | "assistant";
   content: string;
+  suggestedMemory?: SuggestedMemory | null;
+};
+
+type SuggestedMemory = {
+  memoryType: string;
+  title: string;
+  content: string;
+  importance: number;
+  status: "idle" | "saving" | "saved";
+  errorMessage?: string | null;
 };
 
 type MemoryDraft = {
@@ -55,6 +66,26 @@ type Notice = {
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function createMessageId(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
+function clampImportance(value: number) {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+
+  return Math.min(5, Math.max(1, Math.round(value)));
+}
+
+function formatMemoryTypeLabel(value: string) {
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 function ChatPageContent() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -87,6 +118,141 @@ function ChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const scopedProjectId = searchParams?.get("projectId")?.trim() || null;
+
+  function updateMessageById(
+    messageId: string,
+    updater: (message: Message) => Message
+  ) {
+    setMessages((currentMessages) =>
+      currentMessages.map((currentMessage) =>
+        currentMessage.id === messageId ? updater(currentMessage) : currentMessage
+      )
+    );
+  }
+
+  async function createProjectMemory(input: MemoryDraft) {
+    if (!scopedProjectId) {
+      throw new Error("project scope required");
+    }
+
+    const response = await fetch("/api/project-memories", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        projectId: scopedProjectId,
+        memoryType: input.memoryType,
+        title: input.title,
+        content: input.content,
+        sourceConversationId: activeConversationId,
+        importance: clampImportance(input.importance),
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Failed to save memory.");
+    }
+
+    return result;
+  }
+
+  async function requestSuggestedMemory(messageId: string, assistantMessage: string, conversationId: number) {
+    if (!scopedProjectId) {
+      return;
+    }
+
+    const response = await fetch("/api/suggest-memory", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        projectId: scopedProjectId,
+        assistantMessage,
+        conversationId,
+      }),
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const result = await response.json();
+
+    if (!result?.shouldSuggest) {
+      return;
+    }
+
+    updateMessageById(messageId, (currentMessage) => {
+      if (currentMessage.role !== "assistant" || currentMessage.content !== assistantMessage) {
+        return currentMessage;
+      }
+
+      return {
+        ...currentMessage,
+        suggestedMemory: {
+          memoryType: result.memoryType,
+          title: result.title,
+          content: result.content,
+          importance: clampImportance(result.importance),
+          status: "idle",
+          errorMessage: null,
+        },
+      };
+    });
+  }
+
+  async function saveSuggestedMemory(messageId: string) {
+    const currentMessage = messages.find((messageItem) => messageItem.id === messageId);
+
+    if (!currentMessage?.suggestedMemory) {
+      return;
+    }
+
+    updateMessageById(messageId, (messageItem) => ({
+      ...messageItem,
+      suggestedMemory: messageItem.suggestedMemory
+        ? { ...messageItem.suggestedMemory, status: "saving", errorMessage: null }
+        : messageItem.suggestedMemory,
+    }));
+
+    try {
+      await createProjectMemory({
+        memoryType: currentMessage.suggestedMemory.memoryType,
+        title: currentMessage.suggestedMemory.title,
+        content: currentMessage.suggestedMemory.content,
+        importance: currentMessage.suggestedMemory.importance,
+      });
+
+      updateMessageById(messageId, (messageItem) => ({
+        ...messageItem,
+        suggestedMemory: messageItem.suggestedMemory
+          ? { ...messageItem.suggestedMemory, status: "saved", errorMessage: null }
+          : messageItem.suggestedMemory,
+      }));
+    } catch (error: any) {
+      updateMessageById(messageId, (messageItem) => ({
+        ...messageItem,
+        suggestedMemory: messageItem.suggestedMemory
+          ? {
+              ...messageItem.suggestedMemory,
+              status: "idle",
+              errorMessage: error?.message ?? "Failed to save memory.",
+            }
+          : messageItem.suggestedMemory,
+      }));
+    }
+  }
+
+  function dismissSuggestedMemory(messageId: string) {
+    updateMessageById(messageId, (currentMessage) => ({
+      ...currentMessage,
+      suggestedMemory: null,
+    }));
+  }
 
   function syncConversationProjectSelections(nextConversations: Conversation[]) {
     setConversationProjectSelections((current) => {
@@ -148,7 +314,13 @@ function ChatPageContent() {
       return;
     }
 
-    setMessages((data || []) as Message[]);
+    setMessages(
+      ((data || []) as Array<Pick<Message, "role" | "content">>).map((messageItem, index) => ({
+        id: `loaded-${conversationId}-${index}`,
+        role: messageItem.role,
+        content: messageItem.content,
+      }))
+    );
   }
 
   async function createNewChat(projectId: string | null = scopedProjectId) {
@@ -549,34 +721,18 @@ function ChatPageContent() {
 
     setSavingMemory(true);
 
-    const response = await fetch("/api/project-memories", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        projectId: scopedProjectId,
-        memoryType: memoryDraft.memoryType,
-        title: memoryDraft.title,
-        content: memoryDraft.content,
-        sourceConversationId: activeConversationId,
-        importance: memoryDraft.importance,
-      }),
-    });
-
-    const result = await response.json();
-    setSavingMemory(false);
-
-    if (!response.ok) {
+    try {
+      await createProjectMemory(memoryDraft);
+      setMemoryDraft(null);
+      setMemoryNotice({ type: "success", message: "Memory saved" });
+    } catch (error: any) {
       setMemoryNotice({
         type: "error",
-        message: result.error || "Failed to save memory.",
+        message: error?.message ?? "Failed to save memory.",
       });
-      return;
+    } finally {
+      setSavingMemory(false);
     }
-
-    setMemoryDraft(null);
-    setMemoryNotice({ type: "success", message: "Memory saved" });
   }
 
   const pinnedConversations = conversations.filter((conversation) => Boolean(conversation.pinned));
@@ -588,6 +744,7 @@ function ChatPageContent() {
     if (!message.trim() || !activeConversationId) return;
 
     const userMessage: Message = {
+      id: createMessageId("user"),
       role: "user",
       content: message,
     };
@@ -598,7 +755,8 @@ function ChatPageContent() {
 
     await supabase.from("messages").insert([
       {
-        ...userMessage,
+        role: userMessage.role,
+        content: userMessage.content,
         conversation_id: activeConversationId,
       },
     ]);
@@ -623,6 +781,7 @@ function ChatPageContent() {
       setMessages((prev) => [
         ...prev,
         {
+          id: createMessageId("assistant-error"),
           role: "assistant",
           content: "Sorry, something went wrong. Please try again.",
         },
@@ -633,19 +792,29 @@ function ChatPageContent() {
     const data = await response.json();
 
     const assistantMessage: Message = {
+      id: createMessageId("assistant"),
       role: "assistant",
       content: data.reply,
     };
 
     await supabase.from("messages").insert([
       {
-        ...assistantMessage,
+        role: assistantMessage.role,
+        content: assistantMessage.content,
         conversation_id: activeConversationId,
       },
     ]);
 
     setLoading(false);
     setMessages((prev) => [...prev, assistantMessage]);
+
+    if (scopedProjectId) {
+      void requestSuggestedMemory(
+        assistantMessage.id,
+        assistantMessage.content,
+        activeConversationId
+      );
+    }
   }
 
   return (
@@ -1022,9 +1191,9 @@ function ChatPageContent() {
   )}
 
     <div className="mx-auto w-full max-w-4xl space-y-5 pb-24 md:pb-28">
-      {messages.map((msg, index) => (
+      {messages.map((msg) => (
           <div
-            key={index}
+        key={msg.id}
             className={`w-full rounded-[1.6rem] border px-5 py-4 shadow-sm md:px-6 md:py-5 ${
               msg.role === "user"
   ? "ml-auto max-w-2xl bg-gradient-to-br from-yellow-400 to-yellow-600 text-slate-950 border-yellow-400/30"
@@ -1038,6 +1207,59 @@ function ChatPageContent() {
             <div className="chat-markdown max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
             </div>
+
+            {scopedProjectId && msg.role === "assistant" && msg.suggestedMemory && (
+              <div className="mt-4 rounded-2xl border border-sky-500/30 bg-sky-500/10 p-4 text-sm text-slate-100">
+                <div className="mb-3 flex items-center gap-2 text-sky-300">
+                  <Sparkles size={16} />
+                  <span className="font-semibold">Suggested Memory</span>
+                </div>
+
+                <div className="space-y-2">
+                  <p>
+                    <span className="text-slate-400">Type:</span>{" "}
+                    <span className="font-medium text-white">{formatMemoryTypeLabel(msg.suggestedMemory.memoryType)}</span>
+                  </p>
+                  <p>
+                    <span className="text-slate-400">Importance:</span>{" "}
+                    <span className="font-medium text-white">{msg.suggestedMemory.importance}</span>
+                  </p>
+                  <div>
+                    <p className="mb-1 text-slate-400">Title:</p>
+                    <p className="font-medium text-white">{msg.suggestedMemory.title}</p>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-slate-400">Content:</p>
+                    <p className="text-slate-200">{msg.suggestedMemory.content}</p>
+                  </div>
+                </div>
+
+                {msg.suggestedMemory.status === "saved" ? (
+                  <p className="mt-4 text-sm font-medium text-green-300">Saved to project memory.</p>
+                ) : (
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      onClick={() => saveSuggestedMemory(msg.id)}
+                      disabled={msg.suggestedMemory.status === "saving"}
+                      className="rounded-xl border border-sky-400/40 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {msg.suggestedMemory.status === "saving" ? "Saving..." : "Save Memory"}
+                    </button>
+                    <button
+                      onClick={() => dismissSuggestedMemory(msg.id)}
+                      disabled={msg.suggestedMemory.status === "saving"}
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+
+                {msg.suggestedMemory.errorMessage && (
+                  <p className="mt-3 text-sm text-red-300">{msg.suggestedMemory.errorMessage}</p>
+                )}
+              </div>
+            )}
 
             {scopedProjectId && msg.role === "assistant" && (
               <div className="mt-4 flex justify-end">
