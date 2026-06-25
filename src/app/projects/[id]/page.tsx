@@ -53,6 +53,16 @@ type ProjectMemory = {
   created_at: string;
 };
 
+type ActivityItem = {
+  id: string;
+  type: "memory" | "conversation" | "document";
+  title: string;
+  href?: string;
+  timestamp: number;
+  createdAt?: string | null;
+  meta: string;
+};
+
 const MEMORY_TYPE_FILTERS = ["all", "technical", "decision", "legal", "financial", "property"] as const;
 
 type MemoryTypeFilter = (typeof MEMORY_TYPE_FILTERS)[number];
@@ -244,18 +254,33 @@ export default function ProjectDetailPage({
     }
 
     try {
-      await navigator.clipboard.writeText(projectBrief);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(projectBrief);
+      } else {
+        fallbackCopyText(projectBrief);
+      }
       setCopiedBrief(true);
       window.setTimeout(() => {
         setCopiedBrief(false);
       }, 2000);
     } catch {
-      setBriefError("Failed to copy project brief.");
+      try {
+        fallbackCopyText(projectBrief);
+        setCopiedBrief(true);
+        window.setTimeout(() => {
+          setCopiedBrief(false);
+        }, 2000);
+        setBriefError(null);
+      } catch {
+        setBriefError("Failed to copy project brief.");
+      }
     }
   }
 
   const latestDocument = documents[0];
   const documentCount = project?.documentCount ?? documents.length;
+  const conversationCount = conversations.length;
+  const memoryCount = memories.length;
   const normalizedMemorySearch = memorySearch.trim().toLowerCase();
   const filteredMemories = memories.filter((memory) => {
     const matchesType =
@@ -272,6 +297,66 @@ export default function ProjectDetailPage({
     const searchableText = `${memory.title} ${memory.content} ${memory.memory_type}`.toLowerCase();
     return searchableText.includes(normalizedMemorySearch);
   });
+  const recentActivity = buildRecentActivity({
+    documents,
+    conversations,
+    memories,
+    projectId,
+  });
+  const projectHealth = getProjectHealth({
+    documentCount,
+    conversationCount,
+    memoryCount,
+    recentActivity,
+  });
+  const briefAvailable = Boolean(projectBrief.trim());
+  const aiSuggestions = [
+    documentCount === 0
+      ? {
+          id: "upload-documents",
+          title: "Upload project documents",
+          description: "Add contracts, notes, or reference files so project retrieval has source material.",
+          href: `/vault?projectId=${encodeURIComponent(projectId)}`,
+          actionLabel: "Upload Document",
+        }
+      : null,
+    memoryCount === 0
+      ? {
+          id: "save-memories",
+          title: "Save important memories",
+          description: "Capture decisions, constraints, and recurring facts so project chat can reuse them.",
+          href: `/projects/${projectId}/chat`,
+          actionLabel: "Open Project Chat",
+        }
+      : null,
+    conversationCount === 0
+      ? {
+          id: "start-chat",
+          title: "Start project chat",
+          description: "Create the first scoped conversation to build history and source-linked memories.",
+          href: `/projects/${projectId}/chat`,
+          actionLabel: "Chat With Project",
+        }
+      : null,
+    documentCount > 0 && memoryCount > 0 && !briefAvailable
+      ? {
+          id: "generate-brief",
+          title: "Generate project brief",
+          description: "You already have enough project context to produce a current AI brief.",
+          actionLabel: generatingBrief ? "Generating..." : "Generate Brief",
+          onClick: generateProjectBrief,
+          disabled: generatingBrief || !projectId,
+        }
+      : null,
+  ].filter(Boolean) as Array<{
+    id: string;
+    title: string;
+    description: string;
+    href?: string;
+    actionLabel: string;
+    onClick?: () => void;
+    disabled?: boolean;
+  }>;
 
   function getMemoryPreview(content: string) {
     const normalizedContent = content.replace(/\s+/g, " ").trim();
@@ -344,29 +429,221 @@ export default function ProjectDetailPage({
         </Link>
       </div>
 
-      <div className="mb-8 grid gap-6 md:grid-cols-3">
-        <StatCard
-          icon={<FileText size={28} />}
-          color="yellow"
-          title="Documents"
-          value={documentCount}
-          desc="Files assigned to this project"
-        />
-        <StatCard
-          icon={<MessageSquare size={28} />}
-          color="purple"
-          title="Conversations"
-          value="Project"
-          desc="Project-scoped retrieval available"
-        />
-        <StatCard
-          icon={<Brain size={28} />}
-          color="green"
-          title="Knowledge Scope"
-          value={project ? "Scoped" : "Pending"}
-          desc="Retrieval filtered by project"
-        />
-      </div>
+      <section className="mb-8 rounded-3xl border border-slate-800 bg-slate-900 p-6 md:p-8">
+        <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">
+              Project Intelligence Overview
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold text-white md:text-3xl">AI overview before the detail view</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-400">
+              Health, counts, activity, and next actions are derived from the project&apos;s current documents, conversations, memories, and in-page brief state.
+            </p>
+          </div>
+
+          <div className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200">
+            {projectHealth.label} project
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          <div className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-slate-400">Project Health</p>
+                    <h3 className="mt-1 text-xl font-semibold text-white">{projectHealth.label}</h3>
+                  </div>
+                  <span className={`inline-flex h-3 w-3 rounded-full ${projectHealth.dotClass}`} />
+                </div>
+                <p className="text-sm text-slate-300">{projectHealth.description}</p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                <div className="mb-4">
+                  <p className="text-sm text-slate-400">Latest Brief</p>
+                  <h3 className="mt-1 text-xl font-semibold text-white">
+                    {briefAvailable ? "Brief available" : "Generate brief"}
+                  </h3>
+                </div>
+                <p className="text-sm text-slate-300">
+                  {briefAvailable
+                    ? "A project brief is loaded in the current page state and can be copied or regenerated below."
+                    : "No brief is loaded in the current page state yet."}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {!briefAvailable && (
+                    <button
+                      type="button"
+                      onClick={generateProjectBrief}
+                      disabled={generatingBrief || !projectId}
+                      className="inline-flex items-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm font-semibold text-green-200 transition hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Brain size={16} />
+                      {generatingBrief ? "Generating..." : "Generate Brief"}
+                    </button>
+                  )}
+
+                  {briefAvailable && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={copyProjectBrief}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-slate-500 hover:text-white"
+                      >
+                        <Copy size={16} />
+                        {copiedBrief ? "Copied" : "Copy Brief"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={generateProjectBrief}
+                        disabled={generatingBrief || !projectId}
+                        className="inline-flex items-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm font-semibold text-green-200 transition hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <RotateCw size={16} className={generatingBrief ? "animate-spin" : undefined} />
+                        {generatingBrief ? "Generating..." : "Regenerate Brief"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+              <div className="mb-5 flex items-center gap-3">
+                <FileText className="text-yellow-400" size={20} />
+                <div>
+                  <p className="text-sm text-slate-400">Project Stats</p>
+                  <h3 className="text-xl font-semibold text-white">Current workspace counts</h3>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <MiniStatCard
+                  icon={<FileText size={18} />}
+                  title="Documents"
+                  value={documentCount}
+                  color="yellow"
+                />
+                <MiniStatCard
+                  icon={<MessageSquare size={18} />}
+                  title="Conversations"
+                  value={conversationCount}
+                  color="purple"
+                />
+                <MiniStatCard
+                  icon={<Brain size={18} />}
+                  title="Memories"
+                  value={memoryCount}
+                  color="green"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-6">
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+              <div className="mb-5 flex items-center gap-3">
+                <FolderOpen className="text-yellow-400" size={20} />
+                <div>
+                  <p className="text-sm text-slate-400">Recent Activity</p>
+                  <h3 className="text-xl font-semibold text-white">Latest project signals</h3>
+                </div>
+              </div>
+
+              {recentActivity.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  No activity yet. Upload a document, start a conversation, or save a memory to populate the timeline.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {recentActivity.map((activity) => (
+                    <div
+                      key={activity.id}
+                      className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            {activity.type}
+                          </p>
+                          <p className="mt-2 truncate font-medium text-white">{activity.title}</p>
+                          <p className="mt-2 text-sm text-slate-400">{activity.meta}</p>
+                        </div>
+
+                        <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+                          <p className="text-xs text-slate-500">{formatRelativeTime(activity.timestamp)}</p>
+                          {activity.href && (
+                            <Link
+                              href={activity.href}
+                              className="inline-flex items-center gap-2 text-sm font-medium text-yellow-300 transition hover:text-yellow-200"
+                            >
+                              Open
+                              <ChevronRight size={14} />
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+              <div className="mb-5 flex items-center gap-3">
+                <Brain className="text-green-400" size={20} />
+                <div>
+                  <p className="text-sm text-slate-400">AI Suggestions</p>
+                  <h3 className="text-xl font-semibold text-white">Next useful actions</h3>
+                </div>
+              </div>
+
+              {aiSuggestions.length === 0 ? (
+                <p className="text-sm text-slate-300">
+                  Project context is in good shape. Continue the project chat or refresh the brief when the workspace changes.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {aiSuggestions.map((suggestion) => (
+                    <div
+                      key={suggestion.id}
+                      className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"
+                    >
+                      <p className="font-medium text-white">{suggestion.title}</p>
+                      <p className="mt-2 text-sm text-slate-400">{suggestion.description}</p>
+
+                      <div className="mt-4">
+                        {suggestion.href ? (
+                          <Link
+                            href={suggestion.href}
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+                          >
+                            {suggestion.actionLabel}
+                            <ChevronRight size={14} />
+                          </Link>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={suggestion.onClick}
+                            disabled={suggestion.disabled}
+                            className="inline-flex items-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm font-semibold text-green-200 transition hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Brain size={14} />
+                            {suggestion.actionLabel}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {(generatingBrief || briefError || projectBrief) && (
         <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
@@ -684,21 +961,29 @@ export default function ProjectDetailPage({
             href={`/vault?projectId=${encodeURIComponent(projectId)}`}
           />
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-            <h2 className="mb-4 text-lg font-semibold">Recent Activity</h2>
-            {latestDocument ? (
-              <>
-                <p className="text-sm text-slate-300">Latest file: {latestDocument.filename || latestDocument.storage_path}</p>
-                <p className="mt-2 text-sm text-slate-500">Status: {latestDocument.status || "unknown"}</p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-slate-300">Project workspace ready</p>
-                <p className="mt-2 text-sm text-slate-500">Upload a document to start project-aware retrieval.</p>
-              </>
-            )}
-          </div>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+function MiniStatCard({ icon, title, value, color }: any) {
+  const colors: Record<string, string> = {
+    yellow: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+    purple: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+    green: "bg-green-500/10 text-green-400 border-green-500/20",
+  };
+
+  return (
+    <div className={`rounded-2xl border p-4 ${colors[color]}`}>
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950/70">
+          {icon}
+        </div>
+        <div>
+          <p className="text-sm text-slate-300">{title}</p>
+          <p className="text-2xl font-semibold text-white">{value}</p>
+        </div>
       </div>
     </div>
   );
@@ -755,4 +1040,154 @@ function SideCard({ icon, title, desc, button, color, href, disabled }: any) {
       </Link>
     </div>
   );
+}
+
+function buildRecentActivity({
+  documents,
+  conversations,
+  memories,
+  projectId,
+}: {
+  documents: ProjectDocument[];
+  conversations: ProjectConversation[];
+  memories: ProjectMemory[];
+  projectId: string;
+}): ActivityItem[] {
+  const documentActivity = documents.map((document) => ({
+    id: `document-${document.id}`,
+    type: "document" as const,
+    title: document.filename || document.storage_path,
+    timestamp: getTimestamp(document.created_at),
+    createdAt: document.created_at,
+    meta: `Document uploaded${document.status ? ` • ${document.status}` : ""}`,
+  }));
+
+  const conversationActivity = conversations.map((conversation) => ({
+    id: `conversation-${conversation.id}`,
+    type: "conversation" as const,
+    title: conversation.title || `Conversation #${conversation.id}`,
+    href: `/chat?conversationId=${conversation.id}&projectId=${encodeURIComponent(projectId)}`,
+    timestamp: getTimestamp(conversation.created_at),
+    createdAt: conversation.created_at,
+    meta:
+      typeof conversation.messageCount === "number"
+        ? `${conversation.messageCount} message${conversation.messageCount === 1 ? "" : "s"}`
+        : "Project conversation",
+  }));
+
+  const memoryActivity = memories.map((memory) => ({
+    id: `memory-${memory.id}`,
+    type: "memory" as const,
+    title: memory.title,
+    href: memory.source_conversation_id
+      ? `/chat?conversationId=${memory.source_conversation_id}&projectId=${encodeURIComponent(projectId)}`
+      : undefined,
+    timestamp: getTimestamp(memory.created_at),
+    createdAt: memory.created_at,
+    meta: `${memory.memory_type} memory • Importance ${memory.importance}`,
+  }));
+
+  return [...memoryActivity, ...conversationActivity, ...documentActivity]
+    .filter((activity) => activity.timestamp > 0)
+    .sort((left, right) => right.timestamp - left.timestamp)
+    .slice(0, 5);
+}
+
+function getProjectHealth({
+  documentCount,
+  conversationCount,
+  memoryCount,
+  recentActivity,
+}: {
+  documentCount: number;
+  conversationCount: number;
+  memoryCount: number;
+  recentActivity: ActivityItem[];
+}) {
+  if (documentCount === 0 && conversationCount === 0 && memoryCount === 0) {
+    return {
+      label: "Empty",
+      description: "No project documents, conversations, or memories exist yet.",
+      dotClass: "bg-slate-500",
+    };
+  }
+
+  const latestTimestamp = recentActivity[0]?.timestamp ?? 0;
+  const daysSinceLatest = latestTimestamp > 0
+    ? (Date.now() - latestTimestamp) / (1000 * 60 * 60 * 24)
+    : Number.POSITIVE_INFINITY;
+
+  if (daysSinceLatest <= 7) {
+    return {
+      label: "Active",
+      description: "Recent project activity was detected within the last 7 days.",
+      dotClass: "bg-green-400",
+    };
+  }
+
+  if (daysSinceLatest <= 30) {
+    return {
+      label: "Recent",
+      description: "The project has activity in the last 30 days but is not currently busy.",
+      dotClass: "bg-yellow-400",
+    };
+  }
+
+  return {
+    label: "Quiet",
+    description: "Project data exists, but there has been no recent activity in the last 30 days.",
+    dotClass: "bg-slate-400",
+  };
+}
+
+function getTimestamp(value?: string | null) {
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function formatRelativeTime(timestamp: number) {
+  if (!timestamp) {
+    return "Unknown date";
+  }
+
+  const diffInMinutes = Math.max(1, Math.round((Date.now() - timestamp) / (1000 * 60)));
+
+  if (diffInMinutes < 60) {
+    return `${diffInMinutes} minute${diffInMinutes === 1 ? "" : "s"} ago`;
+  }
+
+  const diffInHours = Math.round(diffInMinutes / 60);
+  if (diffInHours < 24) {
+    return `${diffInHours} hour${diffInHours === 1 ? "" : "s"} ago`;
+  }
+
+  const diffInDays = Math.round(diffInHours / 24);
+  if (diffInDays < 30) {
+    return `${diffInDays} day${diffInDays === 1 ? "" : "s"} ago`;
+  }
+
+  return new Date(timestamp).toLocaleDateString();
+}
+
+function fallbackCopyText(value: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  const didCopy = document.execCommand("copy");
+  document.body.removeChild(textarea);
+
+  if (!didCopy) {
+    throw new Error("copy failed");
+  }
 }
