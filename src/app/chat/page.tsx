@@ -205,6 +205,29 @@ function ChatPageContent() {
     });
   }
 
+  async function requestProjectSessionSummary(conversationId: number) {
+    if (!scopedProjectId) {
+      return;
+    }
+
+    try {
+      await fetch("/api/project-session-summary", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectId: scopedProjectId,
+          conversationId,
+        }),
+      });
+    } catch (error) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("Project session summary request failed", error);
+      }
+    }
+  }
+
   async function saveSuggestedMemory(messageId: string) {
     const currentMessage = messages.find((messageItem) => messageItem.id === messageId);
 
@@ -814,6 +837,8 @@ function ChatPageContent() {
         assistantMessage.content,
         activeConversationId
       );
+
+      void requestProjectSessionSummary(activeConversationId);
     }
   }
 
