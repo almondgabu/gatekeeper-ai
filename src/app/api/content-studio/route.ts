@@ -7,6 +7,7 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const allowedModes = new Set(["create-content", "inspiration"]);
 const allowedContentTypes = new Set([
   "standard-post",
   "reel-short-video",
@@ -17,7 +18,6 @@ const allowedContentTypes = new Set([
   "storytelling",
   "custom",
 ]);
-
 const allowedPlatforms = new Set([
   "facebook",
   "instagram",
@@ -25,11 +25,38 @@ const allowedPlatforms = new Set([
   "linkedin",
   "youtube-shorts",
 ]);
-
 const allowedAspectRatios = new Set(["4:5", "9:16", "1:1", "16:9"]);
 const allowedTones = new Set(["professional", "sabahan", "educational", "investor", "funny", "storytelling"]);
 const allowedLanguages = new Set(["english", "sabahan", "both"]);
-const allowedGoals = new Set(["engagement", "education", "selling", "brand-awareness", "weekly-facebook-task"]);
+const allowedGoals = new Set([
+  "engagement",
+  "education",
+  "selling",
+  "lead-generation",
+  "brand-awareness",
+  "weekly-facebook-task",
+]);
+const allowedInspirationCategories = new Set([
+  "property-education",
+  "property-listing",
+  "investment",
+  "legal",
+  "lifestyle",
+  "drone",
+  "construction",
+  "personal-branding",
+  "funny-sabahan",
+  "general",
+]);
+const allowedAudiences = new Set([
+  "buyers",
+  "investors",
+  "land-owners",
+  "developers",
+  "agents",
+  "general-public",
+]);
+const allowedIdeaCounts = new Set([10, 20, 50]);
 
 type StudioResponse = {
   title: string;
@@ -40,6 +67,18 @@ type StudioResponse = {
     label: string;
     value: string;
   }>;
+};
+
+type InspirationIdea = {
+  title: string;
+  angle: string;
+  suggestedContentType: string;
+  whyItMayWork: string;
+  engagementPotential: "Low" | "Medium" | "High";
+};
+
+type InspirationResponse = {
+  ideas: InspirationIdea[];
 };
 
 function normalizeText(value: unknown) {
@@ -98,6 +137,66 @@ function normalizeStudioResponse(value: unknown): StudioResponse {
   };
 }
 
+function normalizeEngagementPotential(value: string) {
+  const normalized = value.toLowerCase();
+
+  if (normalized === "low") {
+    return "Low";
+  }
+
+  if (normalized === "medium") {
+    return "Medium";
+  }
+
+  if (normalized === "high") {
+    return "High";
+  }
+
+  throw new Error("Invalid engagementPotential value");
+}
+
+function normalizeInspirationResponse(value: unknown): InspirationResponse {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid inspiration response");
+  }
+
+  const payload = value as Record<string, unknown>;
+  const ideas = Array.isArray(payload.ideas)
+    ? payload.ideas
+        .map((idea) => {
+          if (!idea || typeof idea !== "object") {
+            return null;
+          }
+
+          const record = idea as Record<string, unknown>;
+          const title = normalizeText(record.title);
+          const angle = normalizeText(record.angle);
+          const suggestedContentType = normalizeText(record.suggestedContentType);
+          const whyItMayWork = normalizeText(record.whyItMayWork);
+          const rawEngagementPotential = normalizeText(record.engagementPotential);
+
+          if (!title || !angle || !suggestedContentType || !whyItMayWork || !rawEngagementPotential) {
+            return null;
+          }
+
+          return {
+            title,
+            angle,
+            suggestedContentType,
+            whyItMayWork,
+            engagementPotential: normalizeEngagementPotential(rawEngagementPotential),
+          };
+        })
+        .filter(Boolean) as InspirationIdea[]
+    : [];
+
+  if (ideas.length === 0) {
+    throw new Error("Incomplete inspiration response");
+  }
+
+  return { ideas };
+}
+
 function getOutputTemplate(contentType: string) {
   if (["reel-short-video", "drone-showcase", "construction-progress"].includes(contentType)) {
     return [
@@ -120,13 +219,84 @@ function getOutputTemplate(contentType: string) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const mode = normalizeText(body?.mode).toLowerCase() || "create-content";
+
+    if (!allowedModes.has(mode)) {
+      return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
+    }
+
+    if (mode === "inspiration") {
+      const category = normalizeText(body?.category).toLowerCase().replace(/\s+/g, "-");
+      const targetAudience = normalizeText(body?.targetAudience).toLowerCase().replace(/\s+/g, "-");
+      const goal = normalizeText(body?.goal).toLowerCase().replace(/\s+/g, "-");
+      const ideaCount = Number(body?.ideaCount);
+
+      if (!allowedInspirationCategories.has(category)) {
+        return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+      }
+
+      if (!allowedAudiences.has(targetAudience)) {
+        return NextResponse.json({ error: "Invalid targetAudience" }, { status: 400 });
+      }
+
+      if (!allowedGoals.has(goal)) {
+        return NextResponse.json({ error: "Invalid goal" }, { status: 400 });
+      }
+
+      if (!allowedIdeaCounts.has(ideaCount)) {
+        return NextResponse.json({ error: "Invalid ideaCount" }, { status: 400 });
+      }
+
+      const response = await client.responses.create({
+        model: "gpt-5-mini",
+        input: `
+You are Gatekeeper AI Content Studio for Borneo Land Gatekeeper.
+
+Generate inspiration ideas only. Do not generate a full post, caption, script, CTA, or hashtag package.
+
+Brand and idea rules:
+- Ideas must fit Borneo Land Gatekeeper.
+- Ideas should be suitable for Facebook posts, reels, and property education.
+- Do not invent property facts, pricing, dimensions, approvals, legal claims, amenities, distances, or construction details.
+- Include Sabah, real estate, or land education angles where relevant.
+- Prioritize ideas that encourage comments, shares, saves, or inquiries.
+- Keep each idea practical, specific, and usable for future content generation.
+
+Output requirements:
+- Return exactly one JSON object.
+- The JSON must match this shape:
+{
+  "ideas": [
+    {
+      "title": "...",
+      "angle": "...",
+      "suggestedContentType": "Standard Post | Reel / Short Video | Property Listing | Educational Content | Drone Showcase | Construction Progress | Storytelling | Custom",
+      "whyItMayWork": "...",
+      "engagementPotential": "Low | Medium | High"
+    }
+  ]
+}
+- Return exactly ${ideaCount} ideas.
+- Do not include numbering in the title.
+
+Request:
+- Category: ${category}
+- Target Audience: ${targetAudience}
+- Goal: ${goal}
+- Number of Ideas: ${ideaCount}
+`,
+      });
+
+      return NextResponse.json(normalizeInspirationResponse(parseJsonResponse(response.output_text)));
+    }
+
     const contentType = normalizeText(body?.contentType).toLowerCase();
     const platform = normalizeText(body?.platform).toLowerCase();
     const aspectRatio = normalizeText(body?.aspectRatio);
     const topic = normalizeText(body?.topic);
     const tone = normalizeText(body?.tone).toLowerCase() || "professional";
     const language = normalizeText(body?.language).toLowerCase() || "english";
-    const goal = normalizeText(body?.goal).toLowerCase();
+    const goal = normalizeText(body?.goal).toLowerCase().replace(/\s+/g, "-");
 
     if (!allowedContentTypes.has(contentType)) {
       return NextResponse.json({ error: "Invalid contentType" }, { status: 400 });
