@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   Clapperboard,
   Copy,
+  FolderClock,
   FileVideo,
   ImagePlay,
   Languages,
@@ -38,6 +39,29 @@ type InspirationIdea = {
   suggestedContentType: string;
   whyItMayWork: string;
   engagementPotential: "Low" | "Medium" | "High";
+};
+
+type SavedHistoryItem = {
+  id: string;
+  kind: "content-package" | "idea-card";
+  title: string;
+  preview: string;
+  savedAt: string;
+  package?: GeneratedPackage;
+  idea?: InspirationIdea;
+  context?: {
+    topic?: string;
+    contentType?: string;
+    platform?: string;
+    aspectRatio?: string;
+    tone?: string;
+    language?: string;
+    goal?: string;
+    category?: string;
+    targetAudience?: string;
+    ideaGoal?: string;
+    ideaCount?: string;
+  };
 };
 
 const contentTypes: ContentTypeOption[] = [
@@ -78,6 +102,7 @@ const inspirationCategories = [
 const targetAudiences = ["Buyers", "Investors", "Land Owners", "Developers", "Agents", "General Public"];
 const inspirationGoals = ["Education", "Engagement", "Selling", "Lead Generation", "Weekly Facebook Task", "Brand Awareness"];
 const ideaCountOptions = [10, 20, 50];
+const savedHistoryStorageKey = "gatekeeper-content-studio-history";
 
 const contentTypeAspectRatioDefaults: Record<string, string> = {
   "standard-post": "4:5",
@@ -102,8 +127,44 @@ function formatPackageForCopy(contentPackage: GeneratedPackage) {
   ].join("\n");
 }
 
+function getPackagePreview(contentPackage: GeneratedPackage) {
+  return contentPackage.sections[0]?.value ?? contentPackage.title;
+}
+
+function readSavedHistory() {
+  if (typeof window === "undefined") {
+    return [] as SavedHistoryItem[];
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(savedHistoryStorageKey);
+
+    if (!rawValue) {
+      return [];
+    }
+
+    const parsed = JSON.parse(rawValue);
+    return Array.isArray(parsed) ? (parsed as SavedHistoryItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedHistory(items: SavedHistoryItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(savedHistoryStorageKey, JSON.stringify(items));
+}
+
+function formatSavedDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
 export default function ContentStudioPage() {
-  const [mode, setMode] = useState<"create-content" | "inspiration">("create-content");
+  const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("create-content");
   const [contentType, setContentType] = useState("standard-post");
   const [platform, setPlatform] = useState("facebook");
   const [aspectRatio, setAspectRatio] = useState(getDefaultAspectRatio("standard-post"));
@@ -121,12 +182,17 @@ export default function ContentStudioPage() {
   const [copied, setCopied] = useState(false);
   const [generatedPackage, setGeneratedPackage] = useState<GeneratedPackage | null>(null);
   const [ideas, setIdeas] = useState<InspirationIdea[]>([]);
+  const [savedItems, setSavedItems] = useState<SavedHistoryItem[]>([]);
 
   useEffect(() => {
     if (!aspectRatioLocked) {
       setAspectRatio(getDefaultAspectRatio(contentType));
     }
   }, [contentType, aspectRatioLocked]);
+
+  useEffect(() => {
+    setSavedItems(readSavedHistory());
+  }, []);
 
   const requestPayload = useMemo(
     () => ({
@@ -228,6 +294,95 @@ export default function ContentStudioPage() {
     }
   }
 
+  function persistSavedItems(nextItems: SavedHistoryItem[]) {
+    setSavedItems(nextItems);
+    writeSavedHistory(nextItems);
+  }
+
+  function savePackage() {
+    if (!generatedPackage) {
+      return;
+    }
+
+    const nextItems = [
+      {
+        id: crypto.randomUUID(),
+        kind: "content-package" as const,
+        title: generatedPackage.title,
+        preview: getPackagePreview(generatedPackage),
+        savedAt: new Date().toISOString(),
+        package: generatedPackage,
+        context: {
+          topic,
+          contentType,
+          platform,
+          aspectRatio,
+          tone,
+          language,
+          goal,
+        },
+      },
+      ...savedItems,
+    ].slice(0, 100);
+
+    persistSavedItems(nextItems);
+    setError(null);
+  }
+
+  function saveIdea(idea: InspirationIdea) {
+    const nextItems = [
+      {
+        id: crypto.randomUUID(),
+        kind: "idea-card" as const,
+        title: idea.title,
+        preview: idea.angle,
+        savedAt: new Date().toISOString(),
+        idea,
+        context: {
+          category,
+          targetAudience,
+          ideaGoal,
+          ideaCount,
+        },
+      },
+      ...savedItems,
+    ].slice(0, 100);
+
+    persistSavedItems(nextItems);
+    setError(null);
+  }
+
+  function deleteSavedItem(itemId: string) {
+    persistSavedItems(savedItems.filter((item) => item.id !== itemId));
+  }
+
+  function loadSavedItem(item: SavedHistoryItem) {
+    if (item.kind === "content-package" && item.package) {
+      setMode("create-content");
+      setGeneratedPackage(item.package);
+      setTopic(item.context?.topic ?? "");
+      setContentType(item.context?.contentType ?? "standard-post");
+      setPlatform(item.context?.platform ?? "facebook");
+      setAspectRatio(item.context?.aspectRatio ?? getDefaultAspectRatio(item.context?.contentType ?? "standard-post"));
+      setAspectRatioLocked(true);
+      setTone(item.context?.tone ?? "Professional");
+      setLanguage(item.context?.language ?? "English");
+      setGoal(item.context?.goal ?? "Engagement");
+      setError(null);
+      return;
+    }
+
+    if (item.kind === "idea-card" && item.idea) {
+      setMode("inspiration");
+      setIdeas([item.idea]);
+      setCategory(item.context?.category ?? "Property Education");
+      setTargetAudience(item.context?.targetAudience ?? "Buyers");
+      setIdeaGoal(item.context?.ideaGoal ?? "Education");
+      setIdeaCount(item.context?.ideaCount ?? "10");
+      setError(null);
+    }
+  }
+
   function useIdea(idea: InspirationIdea) {
     setTopic(`${idea.title}: ${idea.angle}`);
     setMode("create-content");
@@ -254,6 +409,7 @@ export default function ContentStudioPage() {
         <div className="mt-6 inline-flex rounded-2xl border border-slate-800 bg-slate-950 p-1">
           <ModeButton label="Create Content" active={mode === "create-content"} onClick={() => setMode("create-content")} />
           <ModeButton label="Inspiration" active={mode === "inspiration"} onClick={() => setMode("inspiration")} />
+          <ModeButton label="Saved" active={mode === "saved"} onClick={() => setMode("saved")} />
         </div>
       </section>
 
@@ -341,7 +497,7 @@ export default function ContentStudioPage() {
                 />
               </div>
             </>
-          ) : (
+          ) : mode === "inspiration" ? (
             <>
               <div className="flex items-center gap-3">
                 <Lightbulb className="text-yellow-400" size={22} />
@@ -388,6 +544,26 @@ export default function ContentStudioPage() {
                 />
               </div>
             </>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <FolderClock className="text-yellow-400" size={22} />
+                <h2 className="text-2xl font-semibold">Saved History</h2>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <InfoCard
+                  icon={<FileVideo size={18} className="text-yellow-400" />}
+                  title="Local Only"
+                  body="Saved items live in this browser only through localStorage. They are not synced across devices or projects."
+                />
+                <InfoCard
+                  icon={<FolderClock size={18} className="text-yellow-400" />}
+                  title="Reusable Drafts"
+                  body="Load saved packages back into Create Content or reload saved idea cards into Inspiration without touching the database."
+                />
+              </div>
+            </>
           )}
 
           {error && (
@@ -418,8 +594,18 @@ export default function ContentStudioPage() {
                   <RefreshCw size={18} className={generating ? "animate-spin" : undefined} />
                   Regenerate
                 </button>
+
+                <button
+                  type="button"
+                  onClick={savePackage}
+                  disabled={!generatedPackage}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <FolderClock size={18} />
+                  Save Package
+                </button>
               </>
-            ) : (
+            ) : mode === "inspiration" ? (
               <button
                 type="button"
                 onClick={generateIdeas}
@@ -429,6 +615,15 @@ export default function ContentStudioPage() {
                 <Sparkles size={18} />
                 {generating ? "Generating..." : "Generate Ideas"}
               </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSavedItems(readSavedHistory())}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+              >
+                <RefreshCw size={18} />
+                Refresh Saved Items
+              </button>
             )}
           </div>
         </section>
@@ -437,13 +632,23 @@ export default function ContentStudioPage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                {mode === "create-content" ? <FileVideo className="text-yellow-400" size={22} /> : <Lightbulb className="text-yellow-400" size={22} />}
-                <h2 className="text-2xl font-semibold">{mode === "create-content" ? "Generated Package" : "Idea Cards"}</h2>
+                {mode === "create-content" ? (
+                  <FileVideo className="text-yellow-400" size={22} />
+                ) : mode === "inspiration" ? (
+                  <Lightbulb className="text-yellow-400" size={22} />
+                ) : (
+                  <FolderClock className="text-yellow-400" size={22} />
+                )}
+                <h2 className="text-2xl font-semibold">
+                  {mode === "create-content" ? "Generated Package" : mode === "inspiration" ? "Idea Cards" : "Saved Items"}
+                </h2>
               </div>
               <p className="mt-3 text-sm text-slate-400">
                 {mode === "create-content"
                   ? "Output is structured for copy-and-paste publishing or creative production handoff."
-                  : "Generate concept-level ideas first, then push the best one back into Create Content."}
+                  : mode === "inspiration"
+                    ? "Generate concept-level ideas first, then push the best one back into Create Content."
+                    : "Review saved idea cards and generated packages stored in this browser."}
               </p>
             </div>
 
@@ -484,38 +689,90 @@ export default function ContentStudioPage() {
                 ))}
               </div>
             )
-          ) : ideas.length === 0 ? (
+          ) : mode === "inspiration" ? (
+            ideas.length === 0 ? (
+              <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
+                Choose a category, audience, and goal, then generate idea cards.
+              </div>
+            ) : (
+              <div className="mt-6 grid gap-4">
+                {ideas.map((idea) => (
+                  <div key={`${idea.title}-${idea.angle}`} className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="max-w-3xl">
+                        <h3 className="text-xl font-semibold text-white">{idea.title}</h3>
+                        <p className="mt-3 text-sm leading-7 text-slate-300">{idea.angle}</p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => useIdea(idea)}
+                        className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-yellow-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-yellow-400"
+                      >
+                        <Sparkles size={16} />
+                        Use Idea
+                      </button>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => saveIdea(idea)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+                      >
+                        <FolderClock size={16} />
+                        Save Idea
+                      </button>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <IdeaField label="Suggested content type" value={idea.suggestedContentType} />
+                      <IdeaField label="Engagement potential" value={idea.engagementPotential} />
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Why it may work</p>
+                      <p className="mt-3 text-sm leading-7 text-slate-300">{idea.whyItMayWork}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : savedItems.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-              Choose a category, audience, and goal, then generate idea cards.
+              Save a generated package or idea card to build local history in this browser.
             </div>
           ) : (
             <div className="mt-6 grid gap-4">
-              {ideas.map((idea) => (
-                <div key={`${idea.title}-${idea.angle}`} className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+              {savedItems.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="max-w-3xl">
-                      <h3 className="text-xl font-semibold text-white">{idea.title}</h3>
-                      <p className="mt-3 text-sm leading-7 text-slate-300">{idea.angle}</p>
+                      <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.2em] text-slate-500">
+                        <span>{item.kind === "content-package" ? "Create Content" : "Inspiration"}</span>
+                        <span>{formatSavedDate(item.savedAt)}</span>
+                      </div>
+                      <h3 className="mt-3 text-xl font-semibold text-white">{item.title}</h3>
+                      <p className="mt-3 text-sm leading-7 text-slate-300">{item.preview}</p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => useIdea(idea)}
-                      className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-yellow-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-yellow-400"
-                    >
-                      <Sparkles size={16} />
-                      Use Idea
-                    </button>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <IdeaField label="Suggested content type" value={idea.suggestedContentType} />
-                    <IdeaField label="Engagement potential" value={idea.engagementPotential} />
-                  </div>
-
-                  <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Why it may work</p>
-                    <p className="mt-3 text-sm leading-7 text-slate-300">{idea.whyItMayWork}</p>
+                    <div className="flex shrink-0 flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => loadSavedItem(item)}
+                        className="inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-yellow-400"
+                      >
+                        <Sparkles size={16} />
+                        Load
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteSavedItem(item.id)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-red-500/40 hover:text-white"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
