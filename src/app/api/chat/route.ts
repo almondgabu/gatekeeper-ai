@@ -1,8 +1,5 @@
 import OpenAI from "openai";
-import {
-  formatProjectMemoriesContext,
-  retrieveProjectMemories,
-} from "@/lib/retrieveProjectMemories";
+import { buildProjectChatContext } from "@/lib/buildProjectChatContext";
 import { retrieveKnowledgeContext } from "@/lib/retrieveKnowledgeContext";
 
 const client = new OpenAI({
@@ -52,25 +49,24 @@ export async function POST(request: Request) {
     conversationId ? `conversation=${conversationId}` : ""
   );
 
-  const projectMemories = projectId
-    ? await retrieveProjectMemories({
-        projectId,
-        query: userMessage,
-        limit: 10,
-      })
-    : [];
-  const retrievedChunks = await retrieveKnowledgeContext(
-    userMessage,
-    5,
-    projectId
-  );
-  const projectMemoryContext = projectId
-    ? formatProjectMemoriesContext(projectMemories)
-    : null;
-  const knowledgeContext = formatRetrievedContext(retrievedChunks);
   const retrievedContextBlock = projectId
-    ? `${projectMemoryContext}\n\nRetrieved Knowledge Vault Context:\n\n${knowledgeContext}`
-    : `Retrieved Knowledge Vault Context:\n\n${knowledgeContext}`;
+    ? await (async () => {
+        const projectContext = await buildProjectChatContext({
+          projectId,
+          conversationId,
+          userMessage,
+        });
+
+        return [
+          projectContext.projectSummary,
+          projectContext.recentConversationMessages,
+          projectContext.projectMemoryContext,
+          `Retrieved Knowledge Vault Context:\n\n${projectContext.knowledgeContext}`,
+        ].join("\n\n");
+      })()
+    : `Retrieved Knowledge Vault Context:\n\n${formatRetrievedContext(
+        await retrieveKnowledgeContext(userMessage, 5, projectId)
+      )}`;
 
   const response = await client.responses.create({
     model,
@@ -95,6 +91,7 @@ Response Style:
 Knowledge Vault Instructions:
 
 - Use the retrieved Knowledge Vault context below when it is relevant to the user's question.
+- When project summary and recent conversation messages are present, use them to preserve continuity before answering follow-up questions.
 - When project memory context is present, use it before document context.
 - Prefer facts from the retrieved context over assumptions.
 - If the retrieved context is insufficient, say that clearly.
