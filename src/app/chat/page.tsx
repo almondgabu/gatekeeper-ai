@@ -2,6 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { getTimeOfDayGreeting } from "@/lib/greeting";
 import { supabase } from "@/lib/supabase";
 import { Suspense, useEffect, useRef, useState } from "react";
 import {
@@ -114,10 +115,15 @@ function ChatPageContent() {
   const [memoryDraft, setMemoryDraft] = useState<MemoryDraft | null>(null);
   const [savingMemory, setSavingMemory] = useState(false);
   const [memoryNotice, setMemoryNotice] = useState<Notice | null>(null);
+  const [welcomeGreeting, setWelcomeGreeting] = useState<string | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
   const scopedProjectId = searchParams?.get("projectId")?.trim() || null;
+
+  useEffect(() => {
+    setWelcomeGreeting(getTimeOfDayGreeting());
+  }, []);
 
   function updateMessageById(
     messageId: string,
@@ -1153,7 +1159,7 @@ function ChatPageContent() {
           </div>
 
           <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">
-            Good afternoon, Almond
+            {(welcomeGreeting ?? "Good Morning")}, Almond
           </p>
 
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
