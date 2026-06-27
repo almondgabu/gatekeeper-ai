@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { use, useEffect, useMemo, useState } from "react";
-import { ArrowRight, CheckCircle2, FolderKanban, Save, Target } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clapperboard, FolderKanban, Save, Target } from "lucide-react";
 import {
   OPPORTUNITY_STAGES,
   OPPORTUNITY_URGENCY,
@@ -43,6 +43,55 @@ function getScoreTone(score: number) {
   }
 
   return "border-slate-700 bg-slate-900 text-slate-200";
+}
+
+function truncateText(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function getMarketingContentType(opportunityType: OpportunityRecord["opportunity_type"]) {
+  if (opportunityType === "new_listing") {
+    return "property-listing";
+  }
+
+  return "standard-post";
+}
+
+function getMarketingGoal(opportunityType: OpportunityRecord["opportunity_type"]) {
+  if (opportunityType === "new_listing" || opportunityType === "match_opportunity") {
+    return "Selling";
+  }
+
+  return "Engagement";
+}
+
+function buildOpportunityTopic(opportunity: OpportunityRecord) {
+  const parts = [
+    opportunity.title,
+    opportunity.location_summary ? `Location: ${opportunity.location_summary}` : "",
+    opportunity.description ? truncateText(opportunity.description, 140) : "",
+  ].filter(Boolean);
+
+  return parts.join(". ");
+}
+
+function buildMarketingPackageHref(opportunity: OpportunityRecord) {
+  const params = new URLSearchParams({
+    source: "opportunity",
+    opportunityTitle: truncateText(opportunity.title, 100),
+    topic: truncateText(buildOpportunityTopic(opportunity), 220),
+    contentType: getMarketingContentType(opportunity.opportunity_type),
+    goal: getMarketingGoal(opportunity.opportunity_type),
+    tone: "Professional",
+  });
+
+  return `/content-studio?${params.toString()}`;
 }
 
 export default function OpportunityDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -196,6 +245,7 @@ export default function OpportunityDetailPage({ params }: { params: Promise<{ id
   }
 
   const completedChecklist = new Set(opportunity.checklist_completed ?? []);
+  const marketingPackageHref = buildMarketingPackageHref(opportunity);
 
   return (
     <section className="min-h-screen p-6 md:p-8 lg:p-10">
@@ -219,6 +269,14 @@ export default function OpportunityDetailPage({ params }: { params: Promise<{ id
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                href={marketingPackageHref}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+              >
+                <Clapperboard size={18} />
+                Generate Marketing Package
+              </Link>
+
               {opportunity.converted_project_id ? (
                 <Link
                   href={`/projects/${opportunity.converted_project_id}`}

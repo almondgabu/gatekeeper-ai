@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   Clapperboard,
   Copy,
@@ -164,6 +164,7 @@ function formatSavedDate(value: string) {
 }
 
 export default function ContentStudioPage() {
+  const hasAppliedOpportunityPrefill = useRef(false);
   const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("create-content");
   const [contentType, setContentType] = useState("standard-post");
   const [platform, setPlatform] = useState("facebook");
@@ -183,6 +184,7 @@ export default function ContentStudioPage() {
   const [generatedPackage, setGeneratedPackage] = useState<GeneratedPackage | null>(null);
   const [ideas, setIdeas] = useState<InspirationIdea[]>([]);
   const [savedItems, setSavedItems] = useState<SavedHistoryItem[]>([]);
+  const [loadedOpportunityTitle, setLoadedOpportunityTitle] = useState<string | null>(null);
 
   useEffect(() => {
     if (!aspectRatioLocked) {
@@ -192,6 +194,53 @@ export default function ContentStudioPage() {
 
   useEffect(() => {
     setSavedItems(readSavedHistory());
+  }, []);
+
+  useEffect(() => {
+    if (hasAppliedOpportunityPrefill.current) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+
+    if (searchParams.get("source") !== "opportunity") {
+      return;
+    }
+
+    const opportunityTitle = searchParams.get("opportunityTitle")?.trim() ?? "";
+    const topicValue = searchParams.get("topic")?.trim() ?? "";
+    const contentTypeValue = searchParams.get("contentType")?.trim() ?? "";
+    const goalValue = searchParams.get("goal")?.trim() ?? "";
+    const toneValue = searchParams.get("tone")?.trim() ?? "";
+
+    hasAppliedOpportunityPrefill.current = true;
+    setMode("create-content");
+    setGeneratedPackage(null);
+    setIdeas([]);
+    setCopied(false);
+    setError(null);
+    setLoadedOpportunityTitle(opportunityTitle || "Opportunity");
+
+    if (topicValue) {
+      setTopic(topicValue);
+    }
+
+    if (contentTypeValue) {
+      setContentType(contentTypeValue);
+      setAspectRatioLocked(false);
+    }
+
+    if (goalValue) {
+      setGoal(goalValue);
+    }
+
+    if (toneValue) {
+      setTone(toneValue);
+    }
   }, []);
 
   const requestPayload = useMemo(
@@ -411,6 +460,12 @@ export default function ContentStudioPage() {
           <ModeButton label="Inspiration" active={mode === "inspiration"} onClick={() => setMode("inspiration")} />
           <ModeButton label="Saved" active={mode === "saved"} onClick={() => setMode("saved")} />
         </div>
+
+        {loadedOpportunityTitle ? (
+          <div className="mt-5 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 px-5 py-4 text-sm text-yellow-100">
+            Loaded from opportunity: <span className="font-semibold text-white">{loadedOpportunityTitle}</span>
+          </div>
+        ) : null}
       </section>
 
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.1fr)]">
