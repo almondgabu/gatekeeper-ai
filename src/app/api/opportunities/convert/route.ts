@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createActivity } from "@/lib/activityEngine";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -91,6 +92,20 @@ export async function POST(request: Request) {
   if (updateError || !updatedOpportunity) {
     return NextResponse.json({ error: updateError?.message ?? "failed to convert opportunity" }, { status: 500 });
   }
+
+  await createActivity({
+    activityType: "converted_to_project",
+    title: "Opportunity converted to project",
+    summary: `${updatedOpportunity.title} converted into ${project.name}`,
+    opportunityId: updatedOpportunity.id,
+    projectId: project.id,
+    sourceTable: "opportunities",
+    sourceId: updatedOpportunity.id,
+    metadata: {
+      projectId: project.id,
+      projectName: project.name,
+    },
+  });
 
   return NextResponse.json({
     project,

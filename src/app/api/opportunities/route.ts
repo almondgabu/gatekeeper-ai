@@ -8,6 +8,10 @@ import {
   type OpportunityType,
   type OpportunityUrgency,
 } from "@/lib/opportunityIntelligence";
+import {
+  createActivity,
+  getMeaningfulOpportunityChangedFields,
+} from "@/lib/activityEngine";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -240,7 +244,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error?.message ?? "failed to create opportunity" }, { status: 500 });
   }
 
-  return NextResponse.json({ opportunity: asOpportunityRow(data) });
+  const createdOpportunity = asOpportunityRow(data);
+
+  await createActivity({
+    activityType: "opportunity_created",
+    title: "Opportunity created",
+    summary: `${createdOpportunity.title} created as ${createdOpportunity.stage}`,
+    opportunityId: createdOpportunity.id,
+    sourceTable: "opportunities",
+    sourceId: createdOpportunity.id,
+    metadata: {
+      opportunityType: createdOpportunity.opportunity_type,
+      stage: createdOpportunity.stage,
+    },
+  });
+
+  return NextResponse.json({ opportunity: createdOpportunity });
 }
 
 export async function PATCH(request: Request) {
@@ -250,6 +269,21 @@ export async function PATCH(request: Request) {
   if (!opportunityId) {
     return NextResponse.json({ error: "opportunityId required" }, { status: 400 });
   }
+
+  const { data: existingOpportunity, error: existingOpportunityError } = await supabaseAdmin
+    .from("opportunities")
+    .select(OPPORTUNITY_SELECT)
+    .eq("id", opportunityId)
+    .single();
+
+  if (existingOpportunityError || !existingOpportunity) {
+    return NextResponse.json(
+      { error: existingOpportunityError?.message ?? "opportunity not found" },
+      { status: 404 },
+    );
+  }
+
+  const currentOpportunity = asOpportunityRow(existingOpportunity);
 
   const updates: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
@@ -366,7 +400,25 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error?.message ?? "failed to update opportunity" }, { status: 500 });
   }
 
-  return NextResponse.json({ opportunity: asOpportunityRow(data) });
+  const updatedOpportunity = asOpportunityRow(data);
+
+  const changedFields = getMeaningfulOpportunityChangedFields(currentOpportunity, updatedOpportunity);
+
+  if (changedFields.length > 0) {
+    await createActivity({
+      activityType: "opportunity_updated",
+      title: "Opportunity updated",
+      summary: changedFields.map((field) => field.replace(/_/g, " ")).join(", "),
+      opportunityId: updatedOpportunity.id,
+      sourceTable: "opportunities",
+      sourceId: updatedOpportunity.id,
+      metadata: {
+        changedFields,
+      },
+    });
+  }
+
+  return NextResponse.json({ opportunity: updatedOpportunity });
 }
 
 export async function DELETE(request: Request) {
