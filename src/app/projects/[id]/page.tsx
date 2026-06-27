@@ -4,6 +4,7 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { use, useEffect, useState } from "react";
+import { buildProjectIntelligence, type ProjectIntelligenceMetric, type ProjectIntelligenceTone } from "@/lib/projectIntelligence";
 import {
   Brain,
   CheckCircle2,
@@ -459,82 +460,27 @@ export default function ProjectDetailPage({
     briefAvailable,
     briefGeneratedAt,
   });
-  const projectHealth = getProjectHealth({
-    documentCount,
-    conversationCount,
-    memoryCount,
-    recentActivity,
+  const projectIntelligence = buildProjectIntelligence({
+    documents,
+    conversations,
+    memories,
+    tasks,
   });
-  const aiSuggestions = [
-    taskCount === 0
-      ? {
-          id: "create-first-task",
-          title: "Create your first project task",
-          description: "Track the next concrete action directly inside this project workspace.",
-          actionLabel: "Add Task",
-          onClick: () => {
-            document.getElementById("project-task-title")?.focus();
-            document.getElementById("project-tasks")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          },
-        }
-      : null,
-    openTaskCount > 0
-      ? {
-          id: "open-tasks",
-          title: `${openTaskCount} open project task${openTaskCount === 1 ? "" : "s"}`,
-          description: "Review the current open task list and close work as decisions are completed.",
-          actionLabel: "View Tasks",
-          onClick: () => {
-            document.getElementById("project-tasks")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          },
-        }
-      : null,
-    documentCount === 0
-      ? {
-          id: "upload-documents",
-          title: "Upload project documents",
-          description: "Add contracts, notes, or reference files so project retrieval has source material.",
-          href: `/vault?projectId=${encodeURIComponent(projectId)}`,
-          actionLabel: "Upload Document",
-        }
-      : null,
-    memoryCount === 0
-      ? {
-          id: "save-memories",
-          title: "Save important memories",
-          description: "Capture decisions, constraints, and recurring facts so project chat can reuse them.",
-          href: `/projects/${projectId}/chat`,
-          actionLabel: "Open Project Chat",
-        }
-      : null,
-    conversationCount === 0
-      ? {
-          id: "start-chat",
-          title: "Start project chat",
-          description: "Create the first scoped conversation to build history and source-linked memories.",
-          href: `/projects/${projectId}/chat`,
-          actionLabel: "Chat With Project",
-        }
-      : null,
-    documentCount > 0 && memoryCount > 0 && !briefAvailable
-      ? {
-          id: "generate-brief",
-          title: "Generate project brief",
-          description: "You already have enough project context to produce a current AI brief.",
-          actionLabel: generatingBrief ? "Generating..." : "Generate Brief",
-          onClick: generateProjectBrief,
-          disabled: generatingBrief || !projectId,
-        }
-      : null,
-  ].filter(Boolean) as Array<{
-    id: string;
-    title: string;
-    description: string;
-    href?: string;
-    actionLabel: string;
-    onClick?: () => void;
-    disabled?: boolean;
-  }>;
+
+  const recommendedNextActionButton = getRecommendedNextActionButton({
+    actionKey: projectIntelligence.recommendedNextAction.key,
+    projectId,
+    generatingBrief,
+    onGenerateBrief: generateProjectBrief,
+  });
+
+  const intelligenceMetrics: Array<{ title: string; metric: ProjectIntelligenceMetric }> = [
+    { title: "Project Health", metric: projectIntelligence.health },
+    { title: "Project Confidence", metric: projectIntelligence.confidence },
+    { title: "Project Priority", metric: projectIntelligence.priority },
+    { title: "Project Risk", metric: projectIntelligence.risk },
+    { title: "Project Momentum", metric: projectIntelligence.momentum },
+  ];
 
   function getMemoryPreview(content: string) {
     const normalizedContent = content.replace(/\s+/g, " ").trim();
@@ -620,24 +566,19 @@ export default function ProjectDetailPage({
           </div>
 
           <div className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200">
-            {projectHealth.label} project
+            {projectIntelligence.health.label} project
           </div>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <div className="space-y-6">
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-400">Project Health</p>
-                    <h3 className="mt-1 text-xl font-semibold text-white">{projectHealth.label}</h3>
-                  </div>
-                  <span className={`inline-flex h-3 w-3 rounded-full ${projectHealth.dotClass}`} />
-                </div>
-                <p className="text-sm text-slate-300">{projectHealth.description}</p>
-              </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {intelligenceMetrics.map(({ title, metric }) => (
+                <IntelligenceMetricCard key={title} title={title} metric={metric} />
+              ))}
+            </div>
 
+            <div className="grid gap-6 md:grid-cols-2">
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
                 <div className="mb-4">
                   <p className="text-sm text-slate-400">Latest Brief</p>
@@ -684,6 +625,46 @@ export default function ProjectDetailPage({
                         {generatingBrief ? "Generating..." : "Regenerate Brief"}
                       </button>
                     </>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-slate-400">Recommended Next Action</p>
+                    <h3 className="mt-1 text-xl font-semibold text-white">
+                      {projectIntelligence.recommendedNextAction.title}
+                    </h3>
+                  </div>
+                  <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${getTonePillClass(projectIntelligence.priority.tone)}`}>
+                    {projectIntelligence.priority.label}
+                  </span>
+                </div>
+
+                <p className="text-sm text-slate-300">
+                  {projectIntelligence.recommendedNextAction.description}
+                </p>
+
+                <div className="mt-4">
+                  {recommendedNextActionButton.href ? (
+                    <Link
+                      href={recommendedNextActionButton.href}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+                    >
+                      {projectIntelligence.recommendedNextAction.actionLabel}
+                      <ChevronRight size={14} />
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={recommendedNextActionButton.onClick}
+                      disabled={recommendedNextActionButton.disabled}
+                      className="inline-flex items-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm font-semibold text-green-200 transition hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Brain size={14} />
+                      {projectIntelligence.recommendedNextAction.actionLabel}
+                    </button>
                   )}
                 </div>
               </div>
@@ -777,50 +758,24 @@ export default function ProjectDetailPage({
               <div className="mb-5 flex items-center gap-3">
                 <Brain className="text-green-400" size={20} />
                 <div>
-                  <p className="text-sm text-slate-400">AI Suggestions</p>
-                  <h3 className="text-xl font-semibold text-white">Next useful actions</h3>
+                  <p className="text-sm text-slate-400">Score Explanations</p>
+                  <h3 className="text-xl font-semibold text-white">Why each score looks this way</h3>
                 </div>
               </div>
 
-              {aiSuggestions.length === 0 ? (
-                <p className="text-sm text-slate-300">
-                  Project context is in good shape. Continue the project chat or refresh the brief when the workspace changes.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {aiSuggestions.map((suggestion) => (
-                    <div
-                      key={suggestion.id}
-                      className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"
-                    >
-                      <p className="font-medium text-white">{suggestion.title}</p>
-                      <p className="mt-2 text-sm text-slate-400">{suggestion.description}</p>
-
-                      <div className="mt-4">
-                        {suggestion.href ? (
-                          <Link
-                            href={suggestion.href}
-                            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
-                          >
-                            {suggestion.actionLabel}
-                            <ChevronRight size={14} />
-                          </Link>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={suggestion.onClick}
-                            disabled={suggestion.disabled}
-                            className="inline-flex items-center gap-2 rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm font-semibold text-green-200 transition hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <Brain size={14} />
-                            {suggestion.actionLabel}
-                          </button>
-                        )}
-                      </div>
+              <div className="space-y-3">
+                {intelligenceMetrics.map(({ title, metric }) => (
+                  <div key={title} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-medium text-white">{title}</p>
+                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${getTonePillClass(metric.tone)}`}>
+                        {metric.label}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <p className="mt-2 text-sm text-slate-400">{metric.explanation}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -1513,53 +1468,6 @@ function buildRecentActivity({
     .slice(0, 8);
 }
 
-function getProjectHealth({
-  documentCount,
-  conversationCount,
-  memoryCount,
-  recentActivity,
-}: {
-  documentCount: number;
-  conversationCount: number;
-  memoryCount: number;
-  recentActivity: ActivityItem[];
-}) {
-  if (documentCount === 0 && conversationCount === 0 && memoryCount === 0) {
-    return {
-      label: "Empty",
-      description: "No project documents, conversations, or memories exist yet.",
-      dotClass: "bg-slate-500",
-    };
-  }
-
-  const latestTimestamp = recentActivity[0]?.timestamp ?? 0;
-  const daysSinceLatest = latestTimestamp > 0
-    ? (Date.now() - latestTimestamp) / (1000 * 60 * 60 * 24)
-    : Number.POSITIVE_INFINITY;
-
-  if (daysSinceLatest <= 7) {
-    return {
-      label: "Active",
-      description: "Recent project activity was detected within the last 7 days.",
-      dotClass: "bg-green-400",
-    };
-  }
-
-  if (daysSinceLatest <= 30) {
-    return {
-      label: "Recent",
-      description: "The project has activity in the last 30 days but is not currently busy.",
-      dotClass: "bg-yellow-400",
-    };
-  }
-
-  return {
-    label: "Quiet",
-    description: "Project data exists, but there has been no recent activity in the last 30 days.",
-    dotClass: "bg-slate-400",
-  };
-}
-
 function getTimestamp(value?: string | null) {
   if (!value) {
     return 0;
@@ -1626,5 +1534,110 @@ function fallbackCopyText(value: string) {
 
   if (!didCopy) {
     throw new Error("copy failed");
+  }
+}
+
+function getTonePillClass(tone: ProjectIntelligenceTone) {
+  switch (tone) {
+    case "good":
+      return "border-green-500/30 bg-green-500/10 text-green-200";
+    case "warning":
+      return "border-yellow-500/30 bg-yellow-500/10 text-yellow-200";
+    case "critical":
+      return "border-red-500/30 bg-red-500/10 text-red-200";
+    case "active":
+      return "border-blue-500/30 bg-blue-500/10 text-blue-200";
+    default:
+      return "border-slate-700 bg-slate-900 text-slate-200";
+  }
+}
+
+function getToneDotClass(tone: ProjectIntelligenceTone) {
+  switch (tone) {
+    case "good":
+      return "bg-green-400";
+    case "warning":
+      return "bg-yellow-400";
+    case "critical":
+      return "bg-red-400";
+    case "active":
+      return "bg-blue-400";
+    default:
+      return "bg-slate-400";
+  }
+}
+
+function IntelligenceMetricCard({ title, metric }: { title: string; metric: ProjectIntelligenceMetric }) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-slate-400">{title}</p>
+          <h3 className="mt-1 text-xl font-semibold text-white">{metric.label}</h3>
+        </div>
+        <span className={`inline-flex h-3 w-3 rounded-full ${getToneDotClass(metric.tone)}`} />
+      </div>
+
+      <p className="text-3xl font-semibold text-white">{metric.score}</p>
+      <p className="mt-3 text-sm text-slate-300">{metric.explanation}</p>
+    </div>
+  );
+}
+
+function getRecommendedNextActionButton({
+  actionKey,
+  projectId,
+  generatingBrief,
+  onGenerateBrief,
+}: {
+  actionKey: string;
+  projectId: string;
+  generatingBrief: boolean;
+  onGenerateBrief: () => void;
+}) {
+  switch (actionKey) {
+    case "resolve-overdue-tasks":
+    case "review-open-tasks":
+      return {
+        href: null,
+        onClick: () => {
+          document.getElementById("project-tasks")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        },
+        disabled: false,
+      };
+    case "upload-documents":
+      return {
+        href: `/vault?projectId=${encodeURIComponent(projectId)}`,
+        onClick: undefined,
+        disabled: false,
+      };
+    case "start-project-chat":
+    case "build-session-history":
+    case "maintain-project-rhythm":
+      return {
+        href: `/projects/${projectId}/chat`,
+        onClick: undefined,
+        disabled: false,
+      };
+    case "capture-project-memory":
+      return {
+        href: null,
+        onClick: () => {
+          document.getElementById("project-memories")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        },
+        disabled: false,
+      };
+    case "review-stalled-project":
+      return {
+        href: null,
+        onClick: onGenerateBrief,
+        disabled: generatingBrief,
+      };
+    default:
+      return {
+        href: `/projects/${projectId}/chat`,
+        onClick: undefined,
+        disabled: false,
+      };
   }
 }
