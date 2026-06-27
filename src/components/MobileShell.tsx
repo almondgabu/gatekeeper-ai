@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import { Menu, Brain } from "lucide-react";
 
@@ -11,12 +11,28 @@ export default function MobileShell({
 }) {
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    if (!open) {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+      return;
+    }
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+    };
+  }, [open]);
+
   // Mobile drawer does not mount extra body-level debug elements in production
 
   return (
-    <div className="flex min-h-screen h-screen w-full overflow-hidden bg-[#020617] text-white">
+    <div className="flex min-h-screen h-screen w-full overflow-x-hidden overflow-y-hidden bg-[#020617] text-white">
       {/* Desktop Sidebar */}
-      <div className="hidden h-full md:block">
+      <div className="hidden h-full min-h-0 md:block">
         <Sidebar />
       </div>
 
@@ -49,8 +65,8 @@ export default function MobileShell({
           />
 
           {/* Left drawer panel */}
-          <div className="md:hidden fixed left-0 top-0 h-[100dvh] min-h-[100dvh] overflow-hidden z-50 w-[300px] max-w-[85vw] bg-[#0A1023] border-r border-slate-800 shadow-xl">
-            <div className="relative h-full min-h-[100dvh]">
+          <div className="md:hidden fixed inset-y-0 left-0 z-50 h-dvh w-[300px] max-w-[85vw] overflow-hidden border-r border-slate-800 bg-[#0A1023] shadow-xl">
+            <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
               <Sidebar onNavigate={() => setOpen(false)} />
             </div>
           </div>
@@ -58,7 +74,7 @@ export default function MobileShell({
       )}
 
       {/* Main Content */}
-      <main className="flex-1 min-h-0 h-full overflow-x-hidden overflow-y-auto bg-[#020617] text-white pt-12 md:pt-0">
+      <main className="h-full min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#020617] pt-12 text-white md:pt-0">
         {children}
       </main>
     </div>

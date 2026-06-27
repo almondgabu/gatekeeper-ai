@@ -38,13 +38,13 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
   <aside
   className={`
-    h-full bg-[#0A1023]
+    flex h-full min-h-0 flex-col overflow-hidden bg-[#0A1023]
     border-r border-slate-800
     transition-all duration-300
     ${collapsed ? "w-20 p-3" : "w-64 p-4"}
   `}
 >
-    <div className="hidden md:flex justify-end mb-4">
+    <div className="mb-4 hidden shrink-0 justify-end md:flex">
       <button
         onClick={() => setCollapsed(!collapsed)}
         className="text-slate-400 hover:text-white"
@@ -54,7 +54,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     </div>
 
     {/* Sticky top: header + New Chat + mobile search */}
-    <div className="sticky top-0 z-40 bg-[#0A1023] -mx-4 px-4 py-4 md:py-0">
+    <div className="sticky top-0 z-40 shrink-0 bg-[#0A1023] -mx-4 px-4 py-4 md:py-0">
       <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"} mb-3`}>
         <div className="w-11 h-11 rounded-xl bg-yellow-500 flex items-center justify-center">
           <Shield size={22} className="text-black" />
@@ -89,7 +89,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
     </div>
 
-      <nav className="space-y-2 text-sm">
+      <nav className="shrink-0 space-y-2 text-sm">
  {menuItems.map((item) => {
   const isActive = pathname === item.href;
   const Icon = item.icon;
@@ -117,7 +117,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
     {/* Conversation list (scrollable) */}
-    <div className="mt-5 flex-1 overflow-auto px-2 md:px-0">
+    <div className="mt-5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 md:px-0">
       <ConversationList showSearch={false} />
     </div>
 
