@@ -3,6 +3,7 @@ import {
   GATEKEEPER_DEFAULT_TIME_ZONE,
   getTimeOfDayGreeting,
 } from "@/lib/greeting";
+import { buildOpportunityDashboardSummary, type OpportunityRecord } from "@/lib/opportunityIntelligence";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -50,6 +51,8 @@ type DocumentRow = {
   status: string | null;
   created_at: string | null;
 };
+
+type OpportunityRow = OpportunityRecord;
 
 type BriefingItem = {
   type: "decision" | "session_summary" | "task" | "document";
@@ -168,6 +171,11 @@ function sortOpenTasks(tasks: OpenTaskRow[], recentActiveProjectIds: Set<string>
   });
 }
 
+function isMissingOpportunitiesTableError(error: { message?: string } | null | undefined) {
+  const message = error?.message?.toLowerCase() ?? "";
+  return message.includes("public.opportunities") || message.includes("relation \"opportunities\"") || message.includes("schema cache");
+}
+
 export async function GET() {
   const now = new Date();
   const todayWindow = getTimeZoneDayWindow(now, GATEKEEPER_DEFAULT_TIME_ZONE);
@@ -191,6 +199,7 @@ export async function GET() {
     { data: recentSessionSummaries, error: recentSessionSummariesError },
     { data: recentProjectConversations, error: recentProjectConversationsError },
     { data: recentCompletedDocuments, error: recentCompletedDocumentsError },
+    { data: opportunities, error: opportunitiesError },
   ] = await Promise.all([
     supabaseAdmin.from("projects").select("id, name").order("name", { ascending: true }),
     supabaseAdmin.from("documents").select("id", { count: "exact", head: true }),
@@ -262,6 +271,12 @@ export async function GET() {
       .gte("created_at", recentActivityStartIso)
       .order("created_at", { ascending: false })
       .limit(12),
+    supabaseAdmin
+      .from("opportunities")
+      .select(
+        "id, title, opportunity_type, stage, contact_name, location_summary, description, estimated_value, estimated_commission, urgency, next_action, follow_up_date, qualification_notes, checklist_completed, converted_project_id, created_at, updated_at"
+      )
+      .order("updated_at", { ascending: false }),
   ]);
 
   const possibleErrors = [
@@ -280,6 +295,7 @@ export async function GET() {
     recentSessionSummariesError,
     recentProjectConversationsError,
     recentCompletedDocumentsError,
+    opportunitiesError && !isMissingOpportunitiesTableError(opportunitiesError) ? opportunitiesError : null,
   ].filter(Boolean);
 
   if (possibleErrors.length > 0) {
@@ -296,6 +312,10 @@ export async function GET() {
   const sessionSummaryRows = (recentSessionSummaries ?? []) as MemoryRow[];
   const conversationRows = (recentProjectConversations ?? []) as ConversationRow[];
   const recentDocumentRows = (recentCompletedDocuments ?? []) as DocumentRow[];
+  const opportunityRows = opportunitiesError && isMissingOpportunitiesTableError(opportunitiesError)
+    ? []
+    : ((opportunities ?? []) as OpportunityRow[]);
+  const opportunitySummary = buildOpportunityDashboardSummary(opportunityRows, now);
 
   const recentActiveProjectIds = new Set(
     conversationRows
@@ -463,6 +483,7 @@ export async function GET() {
           : "Most recently updated open task",
     })),
     projectsRequiringAttention,
+    opportunitySummary,
     aiLearningToday: {
       sessionSummariesCreated: sessionSummariesCreatedToday ?? 0,
       decisionsLearned: decisionsLearnedToday ?? 0,

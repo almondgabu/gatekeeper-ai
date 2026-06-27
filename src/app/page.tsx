@@ -36,6 +36,23 @@ type DashboardResponse = {
     recentSessionSummaryCount: number;
     lastActivityAt: string | null;
   }>;
+  opportunitySummary: {
+    activeOpportunities: number;
+    highPriorityOpportunities: number;
+    potentialCommission: number;
+    bestOpportunityToday: {
+      id: string;
+      title: string;
+      opportunityType: string;
+      stage: string;
+      score: number;
+      priorityBand: string;
+      recommendation: string;
+      nextAction: string | null;
+      estimatedCommission: number;
+      followUpDate: string | null;
+    } | null;
+  };
   aiLearningToday: {
     sessionSummariesCreated: number;
     decisionsLearned: number;
@@ -69,6 +86,18 @@ function MetricTile({ label, value }: { label: string; value: number }) {
       <p className="mt-2 text-3xl font-semibold text-white">{value}</p>
     </div>
   );
+}
+
+function formatCurrency(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "Not set";
+  }
+
+  return new Intl.NumberFormat("en-MY", {
+    style: "currency",
+    currency: "MYR",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 export default function Home() {
@@ -278,6 +307,66 @@ export default function Home() {
 
           <div className="space-y-6">
             <section className="rounded-[26px] border border-slate-800 bg-slate-900/70 p-6">
+              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Opportunity Hub</p>
+              <h3 className="mt-2 text-2xl font-semibold text-white">Where conversion is most likely</h3>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <MetricTile label="Active" value={dashboard?.opportunitySummary.activeOpportunities ?? 0} />
+                <MetricTile label="High Priority" value={dashboard?.opportunitySummary.highPriorityOpportunities ?? 0} />
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Potential Commission</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">
+                    {formatCurrency(dashboard?.opportunitySummary.potentialCommission ?? 0)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5">
+                {!loading && dashboard?.opportunitySummary.bestOpportunityToday ? (
+                  <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.22em] text-yellow-300/80">Best Opportunity Today</p>
+                        <h4 className="mt-2 text-lg font-semibold text-white">
+                          {dashboard.opportunitySummary.bestOpportunityToday.title}
+                        </h4>
+                        <p className="mt-2 text-yellow-100/85">
+                          {dashboard.opportunitySummary.bestOpportunityToday.recommendation}
+                        </p>
+                        {dashboard.opportunitySummary.bestOpportunityToday.nextAction ? (
+                          <p className="mt-2 text-yellow-100/75">
+                            Next action: {dashboard.opportunitySummary.bestOpportunityToday.nextAction}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="shrink-0 rounded-2xl border border-yellow-500/20 bg-slate-950/40 px-3 py-2 text-xs text-yellow-100">
+                        <p>Score {dashboard.opportunitySummary.bestOpportunityToday.score}</p>
+                        <p className="mt-1">
+                          {dashboard.opportunitySummary.bestOpportunityToday.followUpDate
+                            ? `Follow-up ${dashboard.opportunitySummary.bestOpportunityToday.followUpDate}`
+                            : formatCurrency(dashboard.opportunitySummary.bestOpportunityToday.estimatedCommission)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <Link
+                      href={`/opportunities/${dashboard.opportunitySummary.bestOpportunityToday.id}`}
+                      className="mt-4 inline-flex rounded-xl bg-yellow-500 px-4 py-2 font-semibold text-slate-950 transition hover:bg-yellow-400"
+                    >
+                      Open Opportunity
+                    </Link>
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="No active opportunities yet"
+                    description="Capture a buyer request, listing, match, or follow-up to start surfacing opportunity intelligence here."
+                  />
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-[26px] border border-slate-800 bg-slate-900/70 p-6">
               <p className="text-xs uppercase tracking-[0.24em] text-slate-500">AI Learning Today</p>
               <h3 className="mt-2 text-2xl font-semibold text-white">What Gatekeeper captured</h3>
 
@@ -321,6 +410,14 @@ export default function Home() {
                 >
                   <span>New Chat</span>
                   <span className="text-xs font-medium uppercase tracking-[0.2em]">Start</span>
+                </Link>
+
+                <Link
+                  href="/opportunities"
+                  className="flex w-full items-center justify-between rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 transition hover:bg-slate-700"
+                >
+                  <span>Open Opportunity Hub</span>
+                  <span className="text-xs uppercase tracking-[0.2em] text-slate-400">Pipeline</span>
                 </Link>
 
                 <Link
