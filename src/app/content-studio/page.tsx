@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   Clapperboard,
+  Clock3,
   Copy,
   FolderClock,
   FileVideo,
@@ -345,6 +346,10 @@ function formatSavedDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+function getSceneDurationBadge(duration: string) {
+  return duration.replace("seconds", "sec").replace("second", "sec");
+}
+
 export default function ContentStudioPage() {
   const hasAppliedOpportunityPrefill = useRef(false);
   const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("create-content");
@@ -464,7 +469,8 @@ export default function ContentStudioPage() {
     setCopiedKey(null);
 
     try {
-      const response = await fetch("/api/content-studio", {
+      const endpoint = "/api/content-studio";
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -472,15 +478,32 @@ export default function ContentStudioPage() {
         body: JSON.stringify(requestPayload),
       });
 
-      const result = await response.json();
+      const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(result.error || "Failed to generate production package.");
+        const serverError = typeof result?.error === "string" ? result.error : null;
+        throw new Error(serverError || `Failed to generate production package (${response.status}).`);
+      }
+
+      if (!result || typeof result !== "object") {
+        throw new Error("Invalid API response from /api/content-studio.");
       }
 
       setGeneratedPackage(result as GeneratedPackage);
     } catch (generationError: any) {
-      setError(generationError?.message ?? "Failed to generate production package.");
+      console.error("[production-studio] generateContent failed", {
+        endpoint: "/api/content-studio",
+        origin: typeof window === "undefined" ? null : window.location.origin,
+        requestPayload,
+        error: generationError,
+      });
+
+      const message = generationError?.message ?? "Failed to generate production package.";
+      if (message.toLowerCase().includes("failed to fetch")) {
+        setError("Cannot reach /api/content-studio from this page origin. Check that the Next.js server is running on the same port as the page.");
+      } else {
+        setError(message);
+      }
     } finally {
       setGenerating(false);
     }
@@ -492,7 +515,8 @@ export default function ContentStudioPage() {
     setCopiedKey(null);
 
     try {
-      const response = await fetch("/api/content-studio", {
+      const endpoint = "/api/content-studio";
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -500,15 +524,32 @@ export default function ContentStudioPage() {
         body: JSON.stringify(inspirationPayload),
       });
 
-      const result = await response.json();
+      const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(result.error || "Failed to generate ideas.");
+        const serverError = typeof result?.error === "string" ? result.error : null;
+        throw new Error(serverError || `Failed to generate ideas (${response.status}).`);
+      }
+
+      if (!result || typeof result !== "object") {
+        throw new Error("Invalid API response from /api/content-studio.");
       }
 
       setIdeas(Array.isArray(result.ideas) ? (result.ideas as InspirationIdea[]) : []);
     } catch (generationError: any) {
-      setError(generationError?.message ?? "Failed to generate ideas.");
+      console.error("[production-studio] generateIdeas failed", {
+        endpoint: "/api/content-studio",
+        origin: typeof window === "undefined" ? null : window.location.origin,
+        inspirationPayload,
+        error: generationError,
+      });
+
+      const message = generationError?.message ?? "Failed to generate ideas.";
+      if (message.toLowerCase().includes("failed to fetch")) {
+        setError("Cannot reach /api/content-studio from this page origin. Check that the Next.js server is running on the same port as the page.");
+      } else {
+        setError(message);
+      }
     } finally {
       setGenerating(false);
     }
@@ -901,6 +942,13 @@ export default function ContentStudioPage() {
                   {mode === "create-content" ? "Production Package" : mode === "inspiration" ? "Idea Cards" : "Saved Items"}
                 </h2>
               </div>
+              {mode === "create-content" ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <StatusBadge label="Production Package" tone="gold" />
+                  <StatusBadge label="Google Flow Ready" tone="slate" />
+                  <StatusBadge label="8 sec max" tone="slate" />
+                </div>
+              ) : null}
               <p className="mt-3 text-sm text-slate-400">
                 {mode === "create-content"
                   ? "Output is structured for direct copy, Google Flow prompt generation, and production handoff."
@@ -915,7 +963,7 @@ export default function ContentStudioPage() {
                 type="button"
                 onClick={copyOutput}
                 disabled={!generatedPackage}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 max-md:w-full"
               >
                 <Copy size={16} />
                 {copiedKey === "package" ? "Copied" : "Copy Entire Production Package"}
@@ -929,10 +977,25 @@ export default function ContentStudioPage() {
                 Set up the Director&apos;s Desk on the left, then generate a complete production package.
               </div>
             ) : showingStructuredPackage ? (
-              <div className="mt-6 space-y-4">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-                  <h3 className="text-xl font-semibold text-white">{generatedPackage.title}</h3>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+              <div className="mt-6 space-y-5">
+                <div className="overflow-hidden rounded-[28px] border border-yellow-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(234,179,8,0.16),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))] p-5 shadow-[0_28px_90px_rgba(2,6,23,0.42)] md:p-6">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="max-w-3xl">
+                      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-yellow-400/90">Production Document</p>
+                      <h3 className="mt-3 text-2xl font-semibold leading-tight text-white md:text-3xl">{generatedPackage.title}</h3>
+                      <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 md:text-base">
+                        A polished production package with pre-structured creative direction, scene guidance, and ready-to-copy prompts.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <StatusBadge label="Production Package" tone="gold" />
+                      <StatusBadge label="Google Flow Ready" tone="slate" />
+                      <StatusBadge label={generatedPackage.contentType} tone="slate" />
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <MetaPill icon={<Clapperboard size={14} />} label={generatedPackage.contentType} />
                     <MetaPill icon={<Languages size={14} />} label={generatedPackage.platform} />
                     <MetaPill icon={<Target size={14} />} label={generatedPackage.aspectRatio} />
@@ -977,14 +1040,15 @@ export default function ContentStudioPage() {
 
                 <CopyCard
                   title="Production Checklist"
+                  eyebrow="On-set readiness"
                   copyLabel="Copy Production Checklist"
                   copied={copiedKey === "production-checklist"}
                   onCopy={() => copyText(formatProductionChecklistForCopy(generatedPackage), "production-checklist", "Failed to copy production checklist.")}
                 >
                   <div className="grid gap-3 md:grid-cols-2">
                     {(generatedPackage.productionChecklist ?? []).map((item) => (
-                      <div key={item} className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-200">
-                        ✓ {item}
+                      <div key={item} className="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                        <span className="font-semibold text-yellow-400">✓</span> {item}
                       </div>
                     ))}
                   </div>
@@ -992,58 +1056,88 @@ export default function ContentStudioPage() {
 
                 <CopyCard
                   title="Storyboard"
+                  eyebrow="Narrative flow"
                   copyLabel="Copy Storyboard"
                   copied={copiedKey === "storyboard"}
                   onCopy={() => copyText(formatStoryboardForCopy(generatedPackage), "storyboard", "Failed to copy storyboard.")}
                 >
                   <div className="space-y-3">
                     {(generatedPackage.storyboard ?? []).map((scene, index) => (
-                      <div key={`${scene.sceneNumber}-${scene.summary}`} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Scene {scene.sceneNumber}</p>
-                        <p className="mt-2 text-sm text-slate-200">{scene.summary}</p>
+                      <div key={`${scene.sceneNumber}-${scene.summary}`} className="rounded-2xl border border-slate-800 bg-slate-900/65 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+                        <div className="flex items-start gap-4">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-yellow-500/30 bg-yellow-500/10 text-sm font-semibold text-yellow-300">
+                            {scene.sceneNumber}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Scene {scene.sceneNumber}</p>
+                            <p className="mt-2 text-sm leading-7 text-slate-200">{scene.summary}</p>
+                          </div>
+                        </div>
                         {index < (generatedPackage.storyboard?.length ?? 0) - 1 ? (
-                          <p className="mt-3 text-yellow-400">↓</p>
+                          <p className="mt-3 pl-14 text-yellow-400">↓</p>
                         ) : null}
                       </div>
                     ))}
                   </div>
                 </CopyCard>
 
-                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-                  <div className="mb-4 flex items-center gap-3">
-                    <Video className="text-yellow-400" size={20} />
-                    <div>
-                      <h3 className="text-xl font-semibold text-white">Production Board</h3>
-                      <p className="text-sm text-slate-400">One scene card per production beat with copy-ready prompts.</p>
+                <div className="rounded-[28px] border border-slate-800 bg-slate-950 p-5 shadow-[0_18px_60px_rgba(2,6,23,0.25)] md:p-6">
+                  <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                    <div className="flex items-center gap-3">
+                      <Video className="text-yellow-400" size={20} />
+                      <div>
+                        <h3 className="text-xl font-semibold text-white md:text-2xl">Production Board</h3>
+                        <p className="text-sm leading-6 text-slate-400">One scene card per production beat with copy-ready prompts.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <StatusBadge label="Google Flow Ready" tone="slate" />
+                      <StatusBadge label="8 sec max" tone="gold" />
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     {(generatedPackage.scenes ?? []).map((scene) => (
-                      <div key={scene.sceneNumber} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-yellow-400">🎬 Scene {scene.sceneNumber}</p>
-                            <p className="mt-2 text-sm text-slate-300">Estimated Duration: {scene.estimatedDuration}</p>
-                          </div>
+                      <div key={scene.sceneNumber} className="overflow-hidden rounded-[26px] border border-slate-800 bg-[linear-gradient(180deg,rgba(30,41,59,0.72),rgba(2,6,23,0.88))] shadow-[0_16px_50px_rgba(2,6,23,0.24)]">
+                        <div className="border-b border-slate-800/80 bg-slate-950/60 px-4 py-4 md:px-5">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-yellow-300">
+                                  Scene {scene.sceneNumber}
+                                </span>
+                                <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-xs font-medium text-slate-300">
+                                  <Clock3 size={12} className="text-yellow-400" />
+                                  {getSceneDurationBadge(scene.estimatedDuration)}
+                                </span>
+                              </div>
+                              <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300">
+                                {scene.purpose}
+                              </p>
+                            </div>
 
-                          <button
-                            type="button"
-                            onClick={() => copyText(formatSceneForCopy(scene), `scene-${scene.sceneNumber}`, "Failed to copy scene.")}
-                            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
-                          >
-                            <Copy size={16} />
-                            {copiedKey === `scene-${scene.sceneNumber}` ? "Copied" : "Copy Entire Scene"}
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => copyText(formatSceneForCopy(scene), `scene-${scene.sceneNumber}`, "Failed to copy scene.")}
+                              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white max-md:w-full"
+                            >
+                              <Copy size={16} />
+                              {copiedKey === `scene-${scene.sceneNumber}` ? "Copied" : "Copy Entire Scene"}
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                        <div className="grid gap-4 p-4 md:p-5 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
                           <div className="space-y-4">
                             <InfoPanel title="Purpose" value={scene.purpose} />
                             <InfoPanel title="Director Notes" value={scene.directorNotes} />
-                            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950 p-4">
-                              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Thumbnail Placeholder</p>
-                              <div className="mt-3 flex min-h-28 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-5 text-center text-sm text-slate-300">
+                            <div className="rounded-2xl border border-dashed border-yellow-500/20 bg-slate-950/80 p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Thumbnail Placeholder</p>
+                                <StatusBadge label="Hero Frame" tone="slate" />
+                              </div>
+                              <div className="mt-3 flex min-h-32 items-center justify-center rounded-2xl border border-slate-800 bg-[linear-gradient(180deg,rgba(15,23,42,0.95),rgba(30,41,59,0.65))] px-4 py-5 text-center text-sm font-medium text-slate-300">
                                 {scene.thumbnailPlaceholder}
                               </div>
                             </div>
@@ -1052,6 +1146,7 @@ export default function ContentStudioPage() {
                           <div className="space-y-4">
                             <PromptCard
                               title="Image Prompt"
+                              badge="Visual"
                               value={scene.imagePrompt}
                               copyLabel="Copy Image Prompt"
                               copied={copiedKey === `scene-image-${scene.sceneNumber}`}
@@ -1059,6 +1154,7 @@ export default function ContentStudioPage() {
                             />
                             <PromptCard
                               title="Video Prompt"
+                              badge="Motion"
                               value={scene.videoPrompt}
                               copyLabel="Copy Video Prompt"
                               copied={copiedKey === `scene-video-${scene.sceneNumber}`}
@@ -1071,18 +1167,20 @@ export default function ContentStudioPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-                  <div className="mb-4 flex items-center gap-3">
+                <div className="rounded-[28px] border border-slate-800 bg-slate-950 p-5 shadow-[0_18px_60px_rgba(2,6,23,0.25)] md:p-6">
+                  <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                     <Megaphone className="text-yellow-400" size={20} />
                     <div>
-                      <h3 className="text-xl font-semibold text-white">Final Deliverables</h3>
-                      <p className="text-sm text-slate-400">Caption, CTA, and hashtags with dedicated copy actions.</p>
+                      <h3 className="text-xl font-semibold text-white md:text-2xl">Final Deliverables</h3>
+                      <p className="text-sm leading-6 text-slate-400">Caption, CTA, and hashtags with dedicated copy actions.</p>
                     </div>
+                    <StatusBadge label="Publish Ready" tone="gold" />
                   </div>
 
                   <div className="space-y-4">
                     <PromptCard
                       title="Caption"
+                      badge="Primary Copy"
                       value={generatedPackage.caption ?? ""}
                       copyLabel="Copy Caption"
                       copied={copiedKey === "caption"}
@@ -1090,6 +1188,7 @@ export default function ContentStudioPage() {
                     />
                     <PromptCard
                       title="CTA"
+                      badge="Action"
                       value={generatedPackage.cta ?? ""}
                       copyLabel="Copy CTA"
                       copied={copiedKey === "cta"}
@@ -1097,6 +1196,7 @@ export default function ContentStudioPage() {
                     />
                     <PromptCard
                       title="Hashtags"
+                      badge="Distribution"
                       value={generatedPackage.hashtags ?? ""}
                       copyLabel="Copy Hashtags"
                       copied={copiedKey === "hashtags"}
@@ -1268,25 +1368,30 @@ function SelectField({
 
 function CopyCard({
   title,
+  eyebrow,
   copyLabel,
   copied,
   onCopy,
   children,
 }: {
   title: string;
+  eyebrow?: string;
   copyLabel: string;
   copied: boolean;
   onCopy: () => void;
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+    <div className="rounded-[26px] border border-slate-800 bg-slate-950 p-5 shadow-[0_16px_50px_rgba(2,6,23,0.18)] md:p-6">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="text-xl font-semibold text-white">{title}</h3>
+        <div>
+          {eyebrow ? <p className="text-xs font-semibold uppercase tracking-[0.24em] text-yellow-400/80">{eyebrow}</p> : null}
+          <h3 className="mt-2 text-xl font-semibold text-white md:text-2xl">{title}</h3>
+        </div>
         <button
           type="button"
           onClick={onCopy}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white max-md:w-full"
         >
           <Copy size={16} />
           {copied ? "Copied" : copyLabel}
@@ -1299,31 +1404,36 @@ function CopyCard({
 
 function PromptCard({
   title,
+  badge,
   value,
   copyLabel,
   copied,
   onCopy,
 }: {
   title: string;
+  badge?: string;
   value: string;
   copyLabel: string;
   copied: boolean;
   onCopy: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+    <div className="rounded-2xl border border-slate-800 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
+          {badge ? <StatusBadge label={badge} tone="slate" /> : null}
+        </div>
         <button
           type="button"
           onClick={onCopy}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white max-md:w-full"
         >
           <Copy size={16} />
           {copied ? "Copied" : copyLabel}
         </button>
       </div>
-      <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200">{value}</div>
+      <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200 md:text-[15px]">{value}</div>
     </div>
   );
 }
@@ -1332,9 +1442,9 @@ function FieldGrid({ items }: { items: Array<{ label: string; value: string }> }
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
-        <div key={item.label} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{item.label}</p>
-          <p className="mt-3 text-sm leading-7 text-slate-200">{item.value}</p>
+        <div key={item.label} className="rounded-2xl border border-slate-800 bg-slate-900/65 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{item.label}</p>
+          <p className="mt-3 text-sm leading-7 text-slate-200 md:text-[15px]">{item.value}</p>
         </div>
       ))}
     </div>
@@ -1343,9 +1453,9 @@ function FieldGrid({ items }: { items: Array<{ label: string; value: string }> }
 
 function InfoPanel({ title, value }: { title: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
-      <p className="mt-3 text-sm leading-7 text-slate-200">{value}</p>
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/90 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{title}</p>
+      <p className="mt-3 text-sm leading-7 text-slate-200 md:text-[15px]">{value}</p>
     </div>
   );
 }
@@ -1373,9 +1483,22 @@ function IdeaField({ label, value }: { label: string; value: string }) {
 
 function MetaPill({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300">
+    <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/70 px-4 py-2 text-sm text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
       {icon}
       <span className="capitalize">{label.replace(/-/g, " ")}</span>
     </div>
+  );
+}
+
+function StatusBadge({ label, tone = "slate" }: { label: string; tone?: "slate" | "gold" }) {
+  return (
+    <span
+      className={tone === "gold"
+        ? "inline-flex items-center rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-yellow-200"
+        : "inline-flex items-center rounded-full border border-slate-700 bg-slate-900/75 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-300"
+      }
+    >
+      {label}
+    </span>
   );
 }

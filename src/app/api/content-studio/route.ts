@@ -722,6 +722,10 @@ Request:
 
     return NextResponse.json(normalizeStudioResponse(parseJsonResponse(response.output_text)));
   } catch (error: any) {
+    console.error("[api/content-studio] POST failed", {
+      message: error?.message,
+      stack: error?.stack,
+    });
     return NextResponse.json(
       { error: error?.message ?? String(error) },
       { status: 500 },
