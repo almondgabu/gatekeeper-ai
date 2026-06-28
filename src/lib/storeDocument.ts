@@ -1,4 +1,5 @@
 import { analyzeImageDocument } from "@/lib/analyzeImageDocument";
+import { extractDocumentKnowledge } from "@/lib/extractDocumentKnowledge";
 import { ingestDocument } from "@/lib/ingestDocument";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { buildBaseImageMetadata, mergeDocumentMetadata } from "@/lib/vaultDocumentMetadata";
@@ -20,6 +21,8 @@ type StoredDocumentResult = {
   metadataColumnAvailable?: boolean;
   aiVisionStatus?: "completed" | "failed" | "unavailable";
   aiVisionMessage?: string;
+  knowledgeStatus?: "completed" | "failed" | "skipped" | "unavailable";
+  knowledgeMessage?: string;
 };
 
 const imageMimeTypes = new Set([
@@ -135,20 +138,30 @@ export async function storeAndIngestDocument({
       allowTransientWithoutStorage: false,
     });
 
+    const knowledgeResult = await extractDocumentKnowledge(document.id, {
+      force: false,
+    });
+
     return {
       success: true,
       documentId: document.id,
       storagePath,
       indexed: true,
       chunks: 0,
-      metadataColumnAvailable: analysisResult.metadataColumnAvailable,
+      metadataColumnAvailable:
+        analysisResult.metadataColumnAvailable && knowledgeResult.metadataColumnAvailable,
       aiVisionStatus: analysisResult.aiVision?.status ?? "unavailable",
       aiVisionMessage: analysisResult.message,
+      knowledgeStatus: knowledgeResult.knowledge?.status ?? "unavailable",
+      knowledgeMessage: knowledgeResult.message,
     };
   }
 
   try {
     const ingestResult = await ingestDocument(document.id);
+    const knowledgeResult = await extractDocumentKnowledge(document.id, {
+      force: false,
+    });
 
     return {
       success: true,
@@ -156,6 +169,8 @@ export async function storeAndIngestDocument({
       storagePath,
       indexed: true,
       chunks: ingestResult.chunks,
+      knowledgeStatus: knowledgeResult.knowledge?.status ?? "unavailable",
+      knowledgeMessage: knowledgeResult.message,
     };
   } catch (error: any) {
     return {

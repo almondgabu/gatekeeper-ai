@@ -21,11 +21,42 @@ type VaultAIVision = {
   analyzedAt?: string;
 };
 
+type VaultKnowledgePropertyDetails = {
+  titleType?: string;
+  landSize?: string;
+  district?: string;
+  coordinates?: string;
+  price?: string;
+  usage?: string;
+  restrictions?: string;
+};
+
+type VaultKnowledge = {
+  status: "completed" | "failed" | "skipped";
+  extractedAt?: string;
+  model?: string;
+  summary?: string;
+  keyFacts?: string[];
+  people?: string[];
+  companies?: string[];
+  locations?: string[];
+  propertyDetails?: VaultKnowledgePropertyDetails;
+  dates?: string[];
+  risks?: string[];
+  tasks?: string[];
+  decisions?: string[];
+  suggestedQuestions?: string[];
+  relatedProjectHints?: string[];
+  contentIdeas?: string[];
+  error?: string;
+};
+
 type VaultDocumentMetadata = {
   assetType?: string;
   imageMimeType?: string;
   imageProcessing?: string;
   aiVision?: VaultAIVision;
+  knowledge?: VaultKnowledge;
 };
 
 type VaultDocument = {
@@ -120,6 +151,10 @@ function getDocumentAIVision(document: VaultDocument) {
   return document.metadata?.aiVision ?? null;
 }
 
+function getDocumentKnowledge(document: VaultDocument) {
+  return document.metadata?.knowledge ?? null;
+}
+
 function getDocumentAIStatus(document: VaultDocument): "analyzed" | "failed" | "pending" | "unavailable" | null {
   if (!isImageDocument(document)) {
     return null;
@@ -170,8 +205,73 @@ function getAIStatusBadge(status: "analyzed" | "failed" | "pending" | "unavailab
   };
 }
 
+function getDocumentKnowledgeStatus(document: VaultDocument): "completed" | "failed" | "skipped" | "pending" {
+  const knowledge = getDocumentKnowledge(document);
+
+  if (knowledge?.status === "completed") {
+    return "completed";
+  }
+
+  if (knowledge?.status === "failed") {
+    return "failed";
+  }
+
+  if (knowledge?.status === "skipped") {
+    return "skipped";
+  }
+
+  return "pending";
+}
+
+function getKnowledgeStatusBadge(status: "completed" | "failed" | "skipped" | "pending") {
+  if (status === "completed") {
+    return {
+      label: "Knowledge extracted",
+      className: "bg-emerald-500/15 text-emerald-300",
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      label: "Knowledge failed",
+      className: "bg-red-500/15 text-red-300",
+    };
+  }
+
+  if (status === "skipped") {
+    return {
+      label: "Knowledge skipped",
+      className: "bg-slate-700 text-slate-200",
+    };
+  }
+
+  return {
+    label: "Knowledge pending",
+    className: "bg-amber-500/15 text-amber-200",
+  };
+}
+
+function getKnowledgePropertyDetails(document: VaultDocument) {
+  const propertyDetails = getDocumentKnowledge(document)?.propertyDetails;
+
+  if (!propertyDetails) {
+    return [] as string[];
+  }
+
+  return [
+    propertyDetails.titleType,
+    propertyDetails.landSize,
+    propertyDetails.district,
+    propertyDetails.coordinates,
+    propertyDetails.price,
+    propertyDetails.usage,
+    propertyDetails.restrictions,
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
 function getDocumentSearchText(document: VaultDocument) {
   const aiVision = getDocumentAIVision(document);
+  const knowledge = getDocumentKnowledge(document);
 
   return [
     document.filename || document.storage_path,
@@ -181,9 +281,42 @@ function getDocumentSearchText(document: VaultDocument) {
     aiVision?.detectedScene || "",
     ...(aiVision?.suggestedTags || []),
     ...(aiVision?.possibleUseCases || []),
+    knowledge?.summary || "",
+    ...(knowledge?.keyFacts || []),
+    ...(knowledge?.people || []),
+    ...(knowledge?.companies || []),
+    ...(knowledge?.locations || []),
+    ...getKnowledgePropertyDetails(document),
+    ...(knowledge?.risks || []),
+    ...(knowledge?.tasks || []),
+    ...(knowledge?.suggestedQuestions || []),
   ]
     .join(" ")
     .toLowerCase();
+}
+
+function hasKnowledgeDetails(knowledge: VaultKnowledge | null) {
+  if (!knowledge) {
+    return false;
+  }
+
+  return Boolean(
+    knowledge.summary ||
+      (knowledge.keyFacts && knowledge.keyFacts.length > 0) ||
+      (knowledge.people && knowledge.people.length > 0) ||
+      (knowledge.locations && knowledge.locations.length > 0) ||
+      (knowledge.companies && knowledge.companies.length > 0) ||
+      getKnowledgePropertyDetails({
+        id: "",
+        filename: null,
+        storage_path: "",
+        status: null,
+        metadata: { knowledge },
+      }).length > 0 ||
+      (knowledge.risks && knowledge.risks.length > 0) ||
+      (knowledge.tasks && knowledge.tasks.length > 0) ||
+      (knowledge.suggestedQuestions && knowledge.suggestedQuestions.length > 0)
+  );
 }
 
 function queueStatusClass(status: UploadQueueStatus) {
@@ -202,6 +335,7 @@ export default function VaultPage() {
   const [documentProjectSelections, setDocumentProjectSelections] = useState<Record<string, string>>({});
   const [savingDocumentId, setSavingDocumentId] = useState<string | null>(null);
   const [analyzingDocumentId, setAnalyzingDocumentId] = useState<string | null>(null);
+  const [extractingKnowledgeDocumentId, setExtractingKnowledgeDocumentId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -324,6 +458,7 @@ export default function VaultPage() {
     let uploadedCount = 0;
     let failedCount = queueItems.filter((item) => item.status === "failed").length;
     const aiVisionMessages: string[] = [];
+    const knowledgeMessages: string[] = [];
 
     for (const item of queueItems) {
       if (item.status === "failed") {
@@ -372,6 +507,9 @@ export default function VaultPage() {
         if (typeof result.aiVisionMessage === "string" && result.aiVisionMessage.trim()) {
           aiVisionMessages.push(`${item.filename}: ${result.aiVisionMessage.trim()}`);
         }
+        if (typeof result.knowledgeMessage === "string" && result.knowledgeMessage.trim()) {
+          knowledgeMessages.push(`${item.filename}: ${result.knowledgeMessage.trim()}`);
+        }
         setUploadQueue((currentQueue) =>
           currentQueue.map((currentItem) =>
             currentItem.id === item.id
@@ -402,14 +540,14 @@ export default function VaultPage() {
         type: "success",
         message: `Uploaded ${uploadedCount} of ${queueItems.length} files. Scope: ${scopeLabel}${
           aiVisionMessages.length > 0 ? ` AI: ${aiVisionMessages[0]}` : ""
-        }`,
+        }${knowledgeMessages.length > 0 ? ` Knowledge: ${knowledgeMessages[0]}` : ""}`,
       });
     } else {
       setNotice({
         type: "error",
         message: `Uploaded ${uploadedCount} of ${queueItems.length} files. ${failedCount} failed. Scope: ${scopeLabel}${
           aiVisionMessages.length > 0 ? ` AI: ${aiVisionMessages[0]}` : ""
-        }`,
+        }${knowledgeMessages.length > 0 ? ` Knowledge: ${knowledgeMessages[0]}` : ""}`,
       });
     }
 
@@ -519,11 +657,17 @@ export default function VaultPage() {
     }
   };
 
-  const openImagePreview = async (document: VaultDocument) => {
+  const openDocumentPreview = async (document: VaultDocument) => {
     try {
-      const signedUrl = await ensureSignedUrl(document);
       setPreviewDocument(document);
-      setPreviewUrl(signedUrl);
+
+      if (isImageDocument(document)) {
+        const signedUrl = await ensureSignedUrl(document);
+        setPreviewUrl(signedUrl);
+        return;
+      }
+
+      setPreviewUrl(null);
     } catch (error: any) {
       setNotice({ type: "error", message: error?.message || "Failed to load image preview." });
     }
@@ -587,6 +731,50 @@ export default function VaultPage() {
       });
     } finally {
       setAnalyzingDocumentId(null);
+    }
+  };
+
+  const extractDocumentKnowledge = async (document: VaultDocument, force = true) => {
+    setExtractingKnowledgeDocumentId(document.id);
+
+    try {
+      const response = await fetch("/api/vault/extract-knowledge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          documentId: document.id,
+          force,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Knowledge extraction failed.");
+      }
+
+      setMetadataColumnAvailable(result.metadataColumnAvailable !== false);
+
+      if (result.metadata) {
+        mergeDocumentMetadata(document.id, result.metadata as VaultDocumentMetadata);
+      }
+
+      setNotice({
+        type: result.knowledge?.status === "failed" ? "error" : "success",
+        message:
+          typeof result.message === "string" && result.message.trim()
+            ? result.message
+            : "Knowledge extraction completed.",
+      });
+    } catch (error: any) {
+      setNotice({
+        type: "error",
+        message: error?.message || "Knowledge extraction failed.",
+      });
+    } finally {
+      setExtractingKnowledgeDocumentId(null);
     }
   };
 
@@ -801,6 +989,8 @@ export default function VaultPage() {
                 {(() => {
                   const aiStatus = getDocumentAIStatus(document);
                   const aiBadge = aiStatus ? getAIStatusBadge(aiStatus) : null;
+                  const knowledgeStatus = getDocumentKnowledgeStatus(document);
+                  const knowledgeBadge = getKnowledgeStatusBadge(knowledgeStatus);
 
                   return (
                 <div className="min-w-0 flex items-center gap-3">
@@ -826,6 +1016,11 @@ export default function VaultPage() {
                           {aiBadge.label}
                         </span>
                       ) : null}
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${knowledgeBadge.className}`}
+                      >
+                        {knowledgeBadge.label}
+                      </span>
                     </div>
 
                     <p className="text-xs text-slate-400">
@@ -875,7 +1070,7 @@ export default function VaultPage() {
 
                   <div className="flex items-center justify-end gap-2">
                     <button
-                      onClick={() => (isImageDocument(document) ? openImagePreview(document) : openFile(document.storage_path))}
+                      onClick={() => openDocumentPreview(document)}
                       className="rounded-lg p-2 text-slate-400 transition hover:bg-yellow-500/10 hover:text-yellow-400"
                     >
                       <Eye size={18} />
@@ -913,6 +1108,8 @@ export default function VaultPage() {
                 const aiVision = getDocumentAIVision(document);
                 const aiStatus = getDocumentAIStatus(document);
                 const aiBadge = aiStatus ? getAIStatusBadge(aiStatus) : null;
+                const knowledge = getDocumentKnowledge(document);
+                const knowledgeBadge = getKnowledgeStatusBadge(getDocumentKnowledgeStatus(document));
                 const tagPreview = aiVision?.suggestedTags?.slice(0, 5) ?? [];
 
                 return (
@@ -957,6 +1154,11 @@ export default function VaultPage() {
                             {aiBadge.label}
                           </span>
                         ) : null}
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${knowledgeBadge.className}`}
+                        >
+                          {knowledgeBadge.label}
+                        </span>
                       </div>
 
                       <p className="text-xs text-slate-400">{document.projectName || "Global Vault"}</p>
@@ -977,6 +1179,10 @@ export default function VaultPage() {
                         </div>
                       ) : null}
 
+                      {knowledge?.summary ? (
+                        <p className="line-clamp-3 text-xs leading-5 text-slate-300">{knowledge.summary}</p>
+                      ) : null}
+
                       {!aiVision && isImage ? (
                         <p className="text-xs text-slate-500">
                           {metadataColumnAvailable
@@ -987,7 +1193,7 @@ export default function VaultPage() {
 
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         <button
-                          onClick={() => (isImage ? openImagePreview(document) : openFile(document.storage_path))}
+                          onClick={() => openDocumentPreview(document)}
                           className="inline-flex items-center gap-1 rounded-md border border-slate-600 px-2.5 py-1.5 text-xs text-slate-200 hover:text-white"
                         >
                           <Eye size={13} />
@@ -1019,7 +1225,7 @@ export default function VaultPage() {
         </div>
       </div>
 
-      {previewDocument && previewUrl ? (
+      {previewDocument ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-700 bg-slate-900">
             <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
@@ -1040,11 +1246,32 @@ export default function VaultPage() {
             </div>
 
             <div className="max-h-[75vh] overflow-auto bg-slate-950 p-3">
-              <img
-                src={previewUrl}
-                alt={previewDocument.filename || "Image preview"}
-                className="mx-auto h-auto max-h-[70vh] w-auto max-w-full rounded-lg"
-              />
+              {isImageDocument(previewDocument) && previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt={previewDocument.filename || "Image preview"}
+                  className="mx-auto h-auto max-h-[70vh] w-auto max-w-full rounded-lg"
+                />
+              ) : (
+                <div className="mx-auto flex max-w-3xl items-center justify-between rounded-xl border border-slate-800 bg-slate-900 p-4 text-left">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {previewDocument.filename || previewDocument.storage_path}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {getFileTypeBadge(previewDocument)} • {previewDocument.projectName || "Global Vault"}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => openFile(previewDocument.storage_path)}
+                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-800 hover:text-white"
+                  >
+                    Open File
+                  </button>
+                </div>
+              )}
 
               {isImageDocument(previewDocument) ? (
                 <div className="mx-auto mt-4 max-w-3xl rounded-xl border border-slate-800 bg-slate-900 p-4 text-left">
@@ -1148,6 +1375,194 @@ export default function VaultPage() {
                   })()}
                 </div>
               ) : null}
+
+              <div className="mx-auto mt-4 max-w-3xl rounded-xl border border-slate-800 bg-slate-900 p-4 text-left">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Structured Knowledge</h3>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Extracted summary, facts, entities, risks, and follow-up questions.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => extractDocumentKnowledge(previewDocument, true)}
+                    disabled={extractingKnowledgeDocumentId === previewDocument.id}
+                    className="rounded-lg border border-cyan-500/50 px-3 py-1.5 text-xs font-medium text-cyan-200 transition hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {extractingKnowledgeDocumentId === previewDocument.id ? "Extracting..." : "Extract Knowledge"}
+                  </button>
+                </div>
+
+                {(() => {
+                  const knowledge = getDocumentKnowledge(previewDocument);
+                  const knowledgeStatus = getDocumentKnowledgeStatus(previewDocument);
+                  const knowledgeBadge = getKnowledgeStatusBadge(knowledgeStatus);
+                  const propertyEntries = Object.entries(knowledge?.propertyDetails || {}).filter(
+                    ([, value]) => typeof value === "string" && value.trim().length > 0
+                  );
+
+                  if (!knowledge) {
+                    return (
+                      <div className="space-y-2">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${knowledgeBadge.className}`}
+                        >
+                          {knowledgeBadge.label}
+                        </span>
+                        <p className="text-sm text-slate-400">
+                          {metadataColumnAvailable
+                            ? "Knowledge extraction is pending or has not been run yet."
+                            : "Knowledge extraction is unavailable because documents.metadata does not exist in this environment."}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  if (knowledge.status === "failed") {
+                    return (
+                      <div className="space-y-2">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${knowledgeBadge.className}`}
+                        >
+                          {knowledgeBadge.label}
+                        </span>
+                        <p className="text-sm text-red-300">
+                          {knowledge.error || knowledge.summary || "Knowledge extraction failed safely."}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  if (knowledge.status === "skipped") {
+                    return (
+                      <div className="space-y-2">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${knowledgeBadge.className}`}
+                        >
+                          {knowledgeBadge.label}
+                        </span>
+                        <p className="text-sm text-slate-300">
+                          {knowledge.summary || "Knowledge extraction was skipped because there was no usable content."}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-4 text-sm text-slate-200">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${knowledgeBadge.className}`}
+                        >
+                          {knowledgeBadge.label}
+                        </span>
+                        {knowledge.extractedAt ? (
+                          <span className="text-xs text-slate-400">
+                            {new Date(knowledge.extractedAt).toLocaleString()}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {knowledge.summary ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Summary</p>
+                          <p className="mt-1 text-sm leading-6 text-slate-200">{knowledge.summary}</p>
+                        </div>
+                      ) : null}
+
+                      {knowledge.keyFacts && knowledge.keyFacts.length > 0 ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Key Facts</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {knowledge.keyFacts.map((fact) => (
+                              <span
+                                key={`${previewDocument.id}-${fact}`}
+                                className="inline-flex rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-200"
+                              >
+                                {fact}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {knowledge.people && knowledge.people.length > 0 ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">People</p>
+                          <p className="mt-1 text-sm text-slate-200">{knowledge.people.join(", ")}</p>
+                        </div>
+                      ) : null}
+
+                      {knowledge.locations && knowledge.locations.length > 0 ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Locations</p>
+                          <p className="mt-1 text-sm text-slate-200">{knowledge.locations.join(", ")}</p>
+                        </div>
+                      ) : null}
+
+                      {knowledge.companies && knowledge.companies.length > 0 ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Companies</p>
+                          <p className="mt-1 text-sm text-slate-200">{knowledge.companies.join(", ")}</p>
+                        </div>
+                      ) : null}
+
+                      {propertyEntries.length > 0 ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Property Details</p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {propertyEntries.map(([key, value]) => (
+                              <div key={`${previewDocument.id}-${key}`} className="rounded-lg bg-slate-950/70 px-3 py-2">
+                                <p className="text-[11px] uppercase tracking-wide text-slate-500">{key}</p>
+                                <p className="mt-1 text-sm text-slate-200">{value}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {knowledge.risks && knowledge.risks.length > 0 ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Risks</p>
+                          <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                            {knowledge.risks.map((risk) => (
+                              <li key={`${previewDocument.id}-${risk}`}>• {risk}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {knowledge.tasks && knowledge.tasks.length > 0 ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Tasks</p>
+                          <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                            {knowledge.tasks.map((task) => (
+                              <li key={`${previewDocument.id}-${task}`}>• {task}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {knowledge.suggestedQuestions && knowledge.suggestedQuestions.length > 0 ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Suggested Questions</p>
+                          <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                            {knowledge.suggestedQuestions.map((question) => (
+                              <li key={`${previewDocument.id}-${question}`}>• {question}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {!hasKnowledgeDetails(knowledge) ? (
+                        <p className="text-sm text-slate-400">No compact knowledge details are available yet.</p>
+                      ) : null}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           </div>
         </div>

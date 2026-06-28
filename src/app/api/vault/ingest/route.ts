@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { extractDocumentKnowledge } from "@/lib/extractDocumentKnowledge";
 import { ingestDocument, IngestDocumentError } from "@/lib/ingestDocument";
 
 export const runtime = "nodejs";
@@ -21,8 +22,17 @@ export async function POST(request: Request) {
     }
 
     const result = await ingestDocument(documentId);
+    const knowledgeResult = await extractDocumentKnowledge(documentId, {
+      force: false,
+    });
 
-    return NextResponse.json({ success: true, chunks: result.chunks });
+    return NextResponse.json({
+      success: true,
+      chunks: result.chunks,
+      knowledgeStatus: knowledgeResult.knowledge?.status ?? "unavailable",
+      knowledgeMessage: knowledgeResult.message,
+      metadataColumnAvailable: knowledgeResult.metadataColumnAvailable,
+    });
   } catch (err: any) {
     console.error(err);
 

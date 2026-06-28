@@ -16,11 +16,44 @@ export type AIVisionMetadata = {
   analyzedAt?: string;
 };
 
+export type KnowledgeStatus = "completed" | "failed" | "skipped";
+
+export type KnowledgePropertyDetails = {
+  titleType?: string;
+  landSize?: string;
+  district?: string;
+  coordinates?: string;
+  price?: string;
+  usage?: string;
+  restrictions?: string;
+};
+
+export type DocumentKnowledgeMetadata = {
+  status: KnowledgeStatus;
+  extractedAt: string;
+  model: string;
+  summary: string;
+  keyFacts: string[];
+  people: string[];
+  companies: string[];
+  locations: string[];
+  propertyDetails: KnowledgePropertyDetails;
+  dates: string[];
+  risks: string[];
+  tasks: string[];
+  decisions: string[];
+  suggestedQuestions: string[];
+  relatedProjectHints: string[];
+  contentIdeas: string[];
+  error?: string;
+};
+
 export type ImageDocumentMetadata = {
   assetType: "image";
   imageMimeType: string;
   imageProcessing: "skipped_text_extraction";
   aiVision?: AIVisionMetadata;
+  knowledge?: DocumentKnowledgeMetadata;
 };
 
 export type DocumentMetadataSaveResult = {
