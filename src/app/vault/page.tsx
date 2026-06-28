@@ -448,6 +448,7 @@ export default function VaultPage() {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [previewDocument, setPreviewDocument] = useState<VaultDocument | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [loadingDocuments, setLoadingDocuments] = useState(true);
   const [collapsedKnowledgeSections, setCollapsedKnowledgeSections] = useState<Record<string, boolean>>({});
 
   const getKnowledgeSectionStateKey = (documentId: string, sectionKey: string) => `${documentId}:${sectionKey}`;
@@ -504,20 +505,26 @@ export default function VaultPage() {
   const failedQueueCount = uploadQueue.filter((item) => item.status === "failed").length;
 
   const loadFiles = async () => {
-    const response = await fetch("/api/vault/documents", { cache: "no-store" });
-    const result = await response.json();
+    setLoadingDocuments(true);
 
-    if (!response.ok) {
-      console.error(result.error || "Failed to load vault documents.");
-      return;
+    try {
+      const response = await fetch("/api/vault/documents", { cache: "no-store" });
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error(result.error || "Failed to load vault documents.");
+        return;
+      }
+
+      const nextDocuments = (result.documents ?? []) as VaultDocument[];
+      setMetadataColumnAvailable(result.metadataColumnAvailable !== false);
+      setDocuments(nextDocuments);
+      setDocumentProjectSelections(
+        Object.fromEntries(nextDocuments.map((document) => [document.id, document.project_id ?? ""]))
+      );
+    } finally {
+      setLoadingDocuments(false);
     }
-
-    const nextDocuments = (result.documents ?? []) as VaultDocument[];
-    setMetadataColumnAvailable(result.metadataColumnAvailable !== false);
-    setDocuments(nextDocuments);
-    setDocumentProjectSelections(
-      Object.fromEntries(nextDocuments.map((document) => [document.id, document.project_id ?? ""]))
-    );
   };
 
   const loadProjects = async () => {
@@ -1112,7 +1119,9 @@ export default function VaultPage() {
 
         <div className="space-y-3">
           {filteredDocuments.length === 0 ? (
-            <p className="text-sm text-slate-400">No documents uploaded yet.</p>
+            <p className="text-sm text-slate-400">
+              {loadingDocuments ? "Loading documents..." : "No documents uploaded yet."}
+            </p>
           ) : viewMode === "list" ? (
             filteredDocuments.map((document) => (
               <div
