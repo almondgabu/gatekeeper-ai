@@ -8,6 +8,7 @@ type VaultDocumentRow = {
   filename: string | null;
   storage_path: string;
   status: string | null;
+  mime_type: string | null;
   created_at: string | null;
   file_size: number | null;
   project_id: string | null;
@@ -32,7 +33,7 @@ export async function GET() {
     await Promise.all([
       supabaseAdmin
         .from("documents")
-        .select("id, filename, storage_path, status, created_at, file_size, project_id")
+        .select("id, filename, storage_path, status, mime_type, created_at, file_size, project_id")
         .order("created_at", { ascending: false }),
       supabaseAdmin.from("projects").select("id, name"),
     ]);
@@ -66,7 +67,7 @@ export async function PATCH(request: Request) {
     .from("documents")
     .update({ project_id: projectId })
     .eq("id", documentId)
-    .select("id, filename, storage_path, status, created_at, file_size, project_id")
+    .select("id, filename, storage_path, status, mime_type, created_at, file_size, project_id")
     .single();
 
   if (updateError || !updatedDocument) {

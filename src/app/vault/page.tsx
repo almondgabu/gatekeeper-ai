@@ -1,7 +1,7 @@
 "use client";
 
-import { Trash2, FileText, Download, Eye } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Trash2, FileText, Download, Eye, LayoutGrid, List, Image as ImageIcon, Link as LinkIcon, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type ProjectOption = {
@@ -14,6 +14,7 @@ type VaultDocument = {
   filename: string | null;
   storage_path: string;
   status: string | null;
+  mime_type?: string | null;
   created_at?: string | null;
   file_size?: number | null;
   project_id?: string | null;
@@ -32,6 +33,9 @@ type UploadQueueItem = {
   error?: string;
 };
 
+type VaultViewMode = "list" | "gallery";
+type VaultAssetFilter = "all" | "images" | "documents";
+
 const supportedMimeTypes = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -43,18 +47,10 @@ const supportedMimeTypes = new Set([
   "image/webp",
 ]);
 
-const supportedExtensions = new Set([
-  "pdf",
-  "docx",
-  "txt",
-  "csv",
-  "png",
-  "jpg",
-  "jpeg",
-  "webp",
-]);
+const supportedExtensions = new Set(["pdf", "docx", "txt", "csv", "png", "jpg", "jpeg", "webp"]);
 
-const uploadInputAccept = ".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv,image/png,image/jpeg,image/webp";
+const uploadInputAccept =
+  ".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv,image/png,image/jpeg,image/webp";
 
 function formatFileSize(size: number) {
   if (size < 1024) return `${size} B`;
@@ -62,8 +58,8 @@ function formatFileSize(size: number) {
   return `${(size / 1024 / 1024).toFixed(2)} MB`;
 }
 
-function getFileExtension(filename: string) {
-  return filename.split(".").pop()?.toLowerCase() ?? "";
+function getFileExtension(name: string) {
+  return name.split(".").pop()?.toLowerCase() ?? "";
 }
 
 function isSupportedVaultFile(file: File) {
@@ -75,8 +71,39 @@ function isSupportedVaultFile(file: File) {
   return supportedExtensions.has(getFileExtension(file.name));
 }
 
-export default function VaultPage() {
+function getDocumentExtension(document: VaultDocument) {
+  return getFileExtension(document.filename || document.storage_path);
+}
 
+function isImageDocument(document: VaultDocument) {
+  const status = (document.status || "").toLowerCase();
+  const mimeType = (document.mime_type || "").toLowerCase();
+  const extension = getDocumentExtension(document);
+
+  if (status === "image_asset") return true;
+  if (["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(mimeType)) return true;
+  return ["png", "jpg", "jpeg", "webp"].includes(extension);
+}
+
+function getFileTypeBadge(document: VaultDocument) {
+  if (isImageDocument(document)) return "Image";
+
+  const extension = getDocumentExtension(document);
+  if (extension === "pdf") return "PDF";
+  if (extension === "docx") return "DOCX";
+  if (extension === "txt") return "TXT";
+  if (extension === "csv") return "CSV";
+  return "Document";
+}
+
+function queueStatusClass(status: UploadQueueStatus) {
+  if (status === "uploaded") return "bg-green-500/15 text-green-300";
+  if (status === "uploading") return "bg-yellow-500/15 text-yellow-300";
+  if (status === "failed") return "bg-red-500/15 text-red-300";
+  return "bg-slate-700 text-slate-200";
+}
+
+export default function VaultPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [documents, setDocuments] = useState<VaultDocument[]>([]);
@@ -86,41 +113,94 @@ export default function VaultPage() {
   const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const filteredDocuments = documents.filter((document) =>
-  (document.filename || document.storage_path).toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  const totalStorageUsed = documents.reduce((total, document) => {
-  return total + (document.file_size || 0);
-}, 0);
+  const [viewMode, setViewMode] = useState<VaultViewMode>("list");
+  const [assetFilter, setAssetFilter] = useState<VaultAssetFilter>("all");
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const [previewDocument, setPreviewDocument] = useState<VaultDocument | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
+  const filteredDocuments = useMemo(() => {
+    return documents.filter((document) => {
+      const matchesSearch = (document.filename || document.storage_path)
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
+
+      if (!matchesSearch) {
+        return false;
+      }
+
+      if (assetFilter === "images") {
+        return isImageDocument(document);
+      }
+
+      if (assetFilter === "documents") {
+        return !isImageDocument(document);
+      }
+
+      return true;
+    });
+  }, [documents, searchTerm, assetFilter]);
+
+  const totalStorageUsed = documents.reduce((total, document) => total + (document.file_size || 0), 0);
+  const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
+  const uploadedQueueCount = uploadQueue.filter((item) => item.status === "uploaded").length;
+  const failedQueueCount = uploadQueue.filter((item) => item.status === "failed").length;
+
   const loadFiles = async () => {
-  const response = await fetch("/api/vault/documents", { cache: "no-store" });
-  const result = await response.json();
+    const response = await fetch("/api/vault/documents", { cache: "no-store" });
+    const result = await response.json();
 
-  if (!response.ok) {
-    console.error(result.error || "Failed to load vault documents.");
-    return;
-  }
+    if (!response.ok) {
+      console.error(result.error || "Failed to load vault documents.");
+      return;
+    }
 
-  setDocuments((result.documents ?? []) as VaultDocument[]);
-  setDocumentProjectSelections(
-    Object.fromEntries(
-      ((result.documents ?? []) as VaultDocument[]).map((document) => [document.id, document.project_id ?? ""])
-    )
-  );
-};
+    const nextDocuments = (result.documents ?? []) as VaultDocument[];
+    setDocuments(nextDocuments);
+    setDocumentProjectSelections(
+      Object.fromEntries(nextDocuments.map((document) => [document.id, document.project_id ?? ""]))
+    );
+  };
+
   const loadProjects = async () => {
-  const response = await fetch("/api/projects", { cache: "no-store" });
-  const result = await response.json();
+    const response = await fetch("/api/projects", { cache: "no-store" });
+    const result = await response.json();
 
-  if (!response.ok) {
-    console.error(result.error || "Failed to load projects.");
-    return;
-  }
+    if (!response.ok) {
+      console.error(result.error || "Failed to load projects.");
+      return;
+    }
 
-  setProjects((result.projects ?? []) as ProjectOption[]);
-};
+    setProjects((result.projects ?? []) as ProjectOption[]);
+  };
+
+  const getSignedUrl = async (storagePath: string, expiresIn = 60) => {
+    const { data, error } = await supabase.storage
+      .from("knowledge-vault")
+      .createSignedUrl(storagePath, expiresIn);
+
+    if (error || !data?.signedUrl) {
+      throw new Error(error?.message || "Failed to generate signed URL.");
+    }
+
+    return data.signedUrl;
+  };
+
+  const ensureSignedUrl = async (document: VaultDocument, expiresIn = 600) => {
+    const existing = signedUrls[document.id];
+    if (existing) {
+      return existing;
+    }
+
+    const nextSignedUrl = await getSignedUrl(document.storage_path, expiresIn);
+    setSignedUrls((currentUrls) => ({
+      ...currentUrls,
+      [document.id]: nextSignedUrl,
+    }));
+
+    return nextSignedUrl;
+  };
+
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
 
@@ -223,385 +303,551 @@ const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
     await loadFiles();
 
     if (failedCount === 0) {
-      setNotice({ type: "success", message: `Uploaded ${uploadedCount} of ${queueItems.length} files. Scope: ${scopeLabel}` });
+      setNotice({
+        type: "success",
+        message: `Uploaded ${uploadedCount} of ${queueItems.length} files. Scope: ${scopeLabel}`,
+      });
     } else {
-      setNotice({ type: "error", message: `Uploaded ${uploadedCount} of ${queueItems.length} files. ${failedCount} failed. Scope: ${scopeLabel}` });
+      setNotice({
+        type: "error",
+        message: `Uploaded ${uploadedCount} of ${queueItems.length} files. ${failedCount} failed. Scope: ${scopeLabel}`,
+      });
     }
 
     setUploading(false);
     event.target.value = "";
   };
 
-const deleteFile = async (documentId: string, storagePath: string) => {
-  const confirmDelete = confirm("Delete this file?");
+  const deleteFile = async (documentId: string, storagePath: string) => {
+    const confirmDelete = confirm("Delete this file?");
 
-  if (!confirmDelete) return;
+    if (!confirmDelete) return;
 
-  const response = await fetch("/api/vault/documents", {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ documentId, storagePath }),
-  });
+    const response = await fetch("/api/vault/documents", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ documentId, storagePath }),
+    });
 
-  const result = await response.json();
+    const result = await response.json();
 
-  if (!response.ok) {
-    setNotice({ type: "error", message: result.error || "Delete failed." });
-  } else {
-    setNotice({ type: "success", message: "File deleted." });
-    await loadFiles();
-  }
-};
+    if (!response.ok) {
+      setNotice({ type: "error", message: result.error || "Delete failed." });
+    } else {
+      setNotice({ type: "success", message: "File deleted." });
+      await loadFiles();
+    }
+  };
 
-const saveDocumentProject = async (document: VaultDocument) => {
-  const nextProjectId = documentProjectSelections[document.id] ?? "";
-  setSavingDocumentId(document.id);
+  const saveDocumentProject = async (document: VaultDocument) => {
+    const nextProjectId = documentProjectSelections[document.id] ?? "";
+    setSavingDocumentId(document.id);
 
-  const response = await fetch("/api/vault/documents", {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      documentId: document.id,
-      projectId: nextProjectId || null,
-    }),
-  });
+    const response = await fetch("/api/vault/documents", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        documentId: document.id,
+        projectId: nextProjectId || null,
+      }),
+    });
 
-  const result = await response.json();
-  setSavingDocumentId(null);
+    const result = await response.json();
+    setSavingDocumentId(null);
 
-  if (!response.ok) {
-    setNotice({ type: "error", message: result.error || "Failed to update document project." });
-    return;
-  }
+    if (!response.ok) {
+      setNotice({ type: "error", message: result.error || "Failed to update document project." });
+      return;
+    }
 
-  const updatedDocument = result.document as VaultDocument;
-  setDocuments((currentDocuments) =>
-    currentDocuments.map((currentDocument) =>
-      currentDocument.id === updatedDocument.id ? updatedDocument : currentDocument
-    )
-  );
-  setDocumentProjectSelections((currentSelections) => ({
-    ...currentSelections,
-    [updatedDocument.id]: updatedDocument.project_id ?? "",
-  }));
+    const updatedDocument = result.document as VaultDocument;
+    setDocuments((currentDocuments) =>
+      currentDocuments.map((currentDocument) =>
+        currentDocument.id === updatedDocument.id ? updatedDocument : currentDocument
+      )
+    );
+    setDocumentProjectSelections((currentSelections) => ({
+      ...currentSelections,
+      [updatedDocument.id]: updatedDocument.project_id ?? "",
+    }));
 
-  setNotice({
-    type: "success",
-    message: `Document moved to ${updatedDocument.projectName || "Global Vault"}.`,
-  });
-};
-  
-const downloadFile = async (storagePath: string, filename: string | null) => {
-  const { data, error } = await supabase.storage
-    .from("knowledge-vault")
-    .download(storagePath);
+    setNotice({
+      type: "success",
+      message: `Document moved to ${updatedDocument.projectName || "Global Vault"}.`,
+    });
+  };
 
-  if (error) {
-    alert(error.message);
-    return;
-  }
+  const downloadFile = async (storagePath: string, filename: string | null) => {
+    const { data, error } = await supabase.storage
+      .from("knowledge-vault")
+      .download(storagePath);
 
-  const url = URL.createObjectURL(data);
+    if (error) {
+      alert(error.message);
+      return;
+    }
 
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename || storagePath;
-  link.click();
+    const url = URL.createObjectURL(data);
 
-  URL.revokeObjectURL(url);
-};
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || storagePath;
+    link.click();
 
-const openFile = async (storagePath: string) => {
-  const { data, error } = await supabase.storage
-    .from("knowledge-vault")
-    .createSignedUrl(storagePath, 60);
+    URL.revokeObjectURL(url);
+  };
 
-  if (error) {
-    alert(error.message);
-    return;
-  }
+  const openFile = async (storagePath: string) => {
+    try {
+      const signedUrl = await getSignedUrl(storagePath, 60);
+      window.open(signedUrl, "_blank");
+    } catch (error: any) {
+      alert(error?.message || "Failed to open file.");
+    }
+  };
 
-  window.open(data.signedUrl, "_blank");
-};
+  const copyFileUrl = async (document: VaultDocument) => {
+    try {
+      const signedUrl = await ensureSignedUrl(document);
+      await navigator.clipboard.writeText(signedUrl);
+      setNotice({ type: "success", message: `Copied URL for ${document.filename || document.storage_path}` });
+    } catch (error: any) {
+      setNotice({ type: "error", message: error?.message || "Failed to copy URL." });
+    }
+  };
 
-useEffect(() => {
-  loadFiles();
-  loadProjects();
-}, []);
+  const openImagePreview = async (document: VaultDocument) => {
+    try {
+      const signedUrl = await ensureSignedUrl(document);
+      setPreviewDocument(document);
+      setPreviewUrl(signedUrl);
+    } catch (error: any) {
+      setNotice({ type: "error", message: error?.message || "Failed to load image preview." });
+    }
+  };
 
-  const uploadedQueueCount = uploadQueue.filter((item) => item.status === "uploaded").length;
-  const failedQueueCount = uploadQueue.filter((item) => item.status === "failed").length;
+  const closeImagePreview = () => {
+    setPreviewDocument(null);
+    setPreviewUrl(null);
+  };
 
-  function queueStatusClass(status: UploadQueueStatus) {
-    if (status === "uploaded") return "bg-green-500/15 text-green-300";
-    if (status === "uploading") return "bg-yellow-500/15 text-yellow-300";
-    if (status === "failed") return "bg-red-500/15 text-red-300";
-    return "bg-slate-700 text-slate-200";
-  }
+  useEffect(() => {
+    loadFiles();
+    loadProjects();
+  }, []);
+
+  useEffect(() => {
+    const imageDocs = documents.filter((document) => isImageDocument(document));
+
+    for (const imageDoc of imageDocs) {
+      if (!signedUrls[imageDoc.id]) {
+        ensureSignedUrl(imageDoc).catch(() => {
+          // Keep placeholder card when signed URL cannot be generated.
+        });
+      }
+    }
+  }, [documents]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeImagePreview();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div className="box-border w-full max-w-7xl overflow-x-hidden px-4 py-6 sm:px-6 sm:py-8">
       <div className="mb-6 sm:mb-8">
-        <h1 className="text-3xl font-bold leading-tight sm:text-4xl">
-          Knowledge Vault
-        </h1>
+        <h1 className="text-3xl font-bold leading-tight sm:text-4xl">Knowledge Vault</h1>
 
         <p className="mt-1 text-sm leading-6 text-slate-400 sm:mt-2 sm:text-base sm:leading-7">
           Your private second brain. Store, organize and retrieve knowledge.
         </p>
 
         {notice && (
-          <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${notice.type === "success" ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-red-500/30 bg-red-500/10 text-red-300"}`}>
+          <div
+            className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+              notice.type === "success"
+                ? "border-green-500/30 bg-green-500/10 text-green-300"
+                : "border-red-500/30 bg-red-500/10 text-red-300"
+            }`}
+          >
             {notice.message}
           </div>
         )}
       </div>
 
-      {/* TODO: ChatGPT share import disabled because shared pages may require login and may not expose transcript content. */}
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-[minmax(0,2fr)_320px]">
-
-        {/* Upload */}
         <div className="box-border w-full max-w-full overflow-hidden rounded-2xl border-2 border-dashed border-slate-700 p-5 text-center sm:p-6 lg:p-10">
-  <div className="mb-3 text-3xl sm:mb-4 sm:text-4xl">📄</div>
+          <div className="mb-3 text-3xl sm:mb-4 sm:text-4xl">📄</div>
 
-  <h3 className="text-lg font-semibold sm:text-xl">
-    Upload Documents
-  </h3>
+          <h3 className="text-lg font-semibold sm:text-xl">Upload Documents</h3>
 
-  <p className="mt-1 text-sm text-slate-400 sm:mt-2 sm:text-base">
-    Drag & drop files or click to browse
-  </p>
+          <p className="mt-1 text-sm text-slate-400 sm:mt-2 sm:text-base">Drag & drop files or click to browse</p>
 
-  <div className="mt-5 text-left sm:mt-6">
-    <label className="mb-2 block text-xs font-medium text-slate-300 sm:text-sm">
-      Project Scope
-    </label>
+          <div className="mt-5 text-left sm:mt-6">
+            <label className="mb-2 block text-xs font-medium text-slate-300 sm:text-sm">Project Scope</label>
 
-    <select
-      value={selectedProjectId}
-      onChange={(e) => setSelectedProjectId(e.target.value)}
-      disabled={uploading}
-      className="box-border w-full max-w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white sm:px-4 sm:py-3"
-    >
-      <option value="">No Project / Global Vault</option>
-      {projects.map((project) => (
-        <option key={project.id} value={project.id}>
-          {project.name}
-        </option>
-      ))}
-    </select>
+            <select
+              value={selectedProjectId}
+              onChange={(event) => setSelectedProjectId(event.target.value)}
+              disabled={uploading}
+              className="box-border w-full max-w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white sm:px-4 sm:py-3"
+            >
+              <option value="">No Project / Global Vault</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
 
-    <p className="mt-2 text-xs text-slate-500">
-      Leave this unset to keep the document available to global vault retrieval.
-    </p>
-  </div>
-
-  <input
-  type="file"
-  multiple
-  accept={uploadInputAccept}
-  onChange={handleUpload}
-  disabled={uploading}
-  className="mt-5 box-border w-full max-w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border file:border-slate-600 file:bg-slate-900 file:px-3 file:py-1.5 file:text-sm file:text-slate-100 sm:mt-6"
-/>
-{uploading && (
-  <p className="mt-3 text-sm text-yellow-400">
-    Uploading...
-  </p>
-)}
-
-
-  <p className="mt-3 break-words text-xs text-slate-500 sm:mt-4">
-    PDF, DOCX, TXT, CSV, PNG, JPG, JPEG, WEBP
-  </p>
-
-  {uploadQueue.length > 0 && (
-    <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-left sm:p-4">
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-300 sm:text-sm">
-        <span className="rounded-full bg-slate-800 px-2.5 py-1">Selected: {uploadQueue.length}</span>
-        <span className="rounded-full bg-green-500/15 px-2.5 py-1 text-green-300">Uploaded: {uploadedQueueCount}</span>
-        <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-red-300">Failed: {failedQueueCount}</span>
-      </div>
-
-      <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-        {uploadQueue.map((item) => (
-          <div key={item.id} className="rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="min-w-0 max-w-full break-all text-xs text-white sm:text-sm">{item.filename}</p>
-              <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${queueStatusClass(item.status)}`}>
-                {item.status}
-              </span>
-            </div>
-            <p className="mt-1 text-[11px] text-slate-400 sm:text-xs">
-              {(item.mimeType || "unknown").toLowerCase()} • {formatFileSize(item.size)}
+            <p className="mt-2 text-xs text-slate-500">
+              Leave this unset to keep the document available to global vault retrieval.
             </p>
-            {item.error ? (
-              <p className="mt-1 text-[11px] text-red-300 sm:text-xs">{item.error}</p>
-            ) : null}
           </div>
-        ))}
-      </div>
-    </div>
-  )}
-</div>
 
-        {/* Stats */}
+          <input
+            type="file"
+            multiple
+            accept={uploadInputAccept}
+            onChange={handleUpload}
+            disabled={uploading}
+            className="mt-5 box-border w-full max-w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border file:border-slate-600 file:bg-slate-900 file:px-3 file:py-1.5 file:text-sm file:text-slate-100 sm:mt-6"
+          />
+          {uploading && <p className="mt-3 text-sm text-yellow-400">Uploading...</p>}
+
+          <p className="mt-3 break-words text-xs text-slate-500 sm:mt-4">PDF, DOCX, TXT, CSV, PNG, JPG, JPEG, WEBP</p>
+
+          {uploadQueue.length > 0 && (
+            <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-left sm:p-4">
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-300 sm:text-sm">
+                <span className="rounded-full bg-slate-800 px-2.5 py-1">Selected: {uploadQueue.length}</span>
+                <span className="rounded-full bg-green-500/15 px-2.5 py-1 text-green-300">Uploaded: {uploadedQueueCount}</span>
+                <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-red-300">Failed: {failedQueueCount}</span>
+              </div>
+
+              <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                {uploadQueue.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="min-w-0 max-w-full break-all text-xs text-white sm:text-sm">{item.filename}</p>
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${queueStatusClass(
+                          item.status
+                        )}`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-400 sm:text-xs">
+                      {(item.mimeType || "unknown").toLowerCase()} • {formatFileSize(item.size)}
+                    </p>
+                    {item.error ? <p className="mt-1 text-[11px] text-red-300 sm:text-xs">{item.error}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="box-border min-w-0 rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6">
-          <h2 className="text-lg font-semibold mb-4 text-white">
-            Vault Status
-          </h2>
+          <h2 className="mb-4 text-lg font-semibold text-white">Vault Status</h2>
 
           <div className="space-y-3">
             <div>
-              <p className="text-slate-400 text-sm">
-                Documents
-              </p>
-              <p className="text-2xl font-bold text-white">
-  {documents.length}
-</p>
+              <p className="text-sm text-slate-400">Documents</p>
+              <p className="text-2xl font-bold text-white">{documents.length}</p>
             </div>
 
             <div>
-              <p className="text-slate-400 text-sm">
-                Storage Used
-              </p>
-              <p className="text-2xl font-bold text-yellow-400">
-                {totalStorageUsedMB} MB
-              </p>
+              <p className="text-sm text-slate-400">Storage Used</p>
+              <p className="text-2xl font-bold text-yellow-400">{totalStorageUsedMB} MB</p>
             </div>
 
             <div>
-              <p className="text-slate-400 text-sm">
-                Status
-              </p>
-              <p className="text-green-400">
-                Connected
-              </p>
+              <p className="text-sm text-slate-400">Status</p>
+              <p className="text-green-400">Connected</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-4 text-white sm:mt-8 sm:p-6">
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h2 className="text-lg font-semibold text-white">Recent Documents</h2>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900 p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium sm:text-sm ${
+                  viewMode === "list" ? "bg-yellow-500 text-black" : "text-slate-200 hover:text-white"
+                }`}
+              >
+                <List size={14} />
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("gallery")}
+                className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium sm:text-sm ${
+                  viewMode === "gallery" ? "bg-yellow-500 text-black" : "text-slate-200 hover:text-white"
+                }`}
+              >
+                <LayoutGrid size={14} />
+                Gallery
+              </button>
+            </div>
+
+            <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900 p-1">
+              {(["all", "images", "documents"] as VaultAssetFilter[]).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setAssetFilter(filter)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize sm:text-sm ${
+                    assetFilter === filter ? "bg-yellow-500 text-black" : "text-slate-200 hover:text-white"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
-      </div>
-
-      {/* Recent Files */}
-
-      <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-4 text-white sm:mt-8 sm:p-6">
-        <h2 className="text-lg font-semibold mb-4 text-white">
-          Recent Documents
-        </h2>
         <input
-  type="text"
-  placeholder="Search documents..."
-  value={searchTerm}
-  onChange={(e) => setSearchTerm(e.target.value)}
-  className="mb-4 box-border w-full max-w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-400 sm:px-4"
-/>
+          type="text"
+          placeholder="Search documents..."
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          className="mb-4 box-border w-full max-w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-400 sm:px-4"
+        />
 
         <div className="space-y-3">
+          {filteredDocuments.length === 0 ? (
+            <p className="text-sm text-slate-400">No documents uploaded yet.</p>
+          ) : viewMode === "list" ? (
+            filteredDocuments.map((document) => (
+              <div
+                key={document.id}
+                className="flex flex-col gap-3 rounded-xl bg-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 flex items-center gap-3">
+                  <FileText size={18} className="shrink-0 text-yellow-400" />
 
-          {documents.length === 0 ? (
-  <p className="text-slate-400 text-sm">
-    No documents uploaded yet.
-  </p>
-) : (
-  filteredDocuments.map((document) => (
-    <div
-  key={document.id}
-  className="flex flex-col gap-3 rounded-xl bg-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between"
->
-  <div className="flex items-center gap-3 min-w-0">
-    <FileText
-      size={18}
-      className="text-yellow-400 shrink-0"
-    />
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-white">{document.filename || document.storage_path}</p>
+                      <span className="inline-flex rounded-full bg-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-100">
+                        {getFileTypeBadge(document)}
+                      </span>
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                          document.project_id ? "bg-yellow-500/15 text-yellow-300" : "bg-slate-700 text-slate-200"
+                        }`}
+                      >
+                        {document.projectName || "Global Vault"}
+                      </span>
+                    </div>
 
-    <div className="min-w-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="truncate text-white">
-          {document.filename || document.storage_path}
-        </p>
-        <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${document.project_id ? "bg-yellow-500/15 text-yellow-300" : "bg-slate-700 text-slate-200"}`}>
-          {document.projectName || "Global Vault"}
-        </span>
-      </div>
+                    <p className="text-xs text-slate-400">
+                      {typeof document.file_size === "number" ? `${(document.file_size / 1024 / 1024).toFixed(2)} MB` : "Unknown size"}
+                      {" • "}
+                      {document.created_at ? new Date(document.created_at).toLocaleDateString() : "No date"}
+                      {" • "}
+                      {document.status || "unknown"}
+                    </p>
+                  </div>
+                </div>
 
-      <p className="text-xs text-slate-400">
-  {typeof document.file_size === "number"
-    ? `${(document.file_size / 1024 / 1024).toFixed(2)} MB`
-    : "Unknown size"}
-  {" • "}
-  {document.created_at
-    ? new Date(document.created_at).toLocaleDateString()
-    : "No date"}
-  {" • "}
-  {document.status || "unknown"}
-</p>
-    </div>
-  </div>
+                <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[260px]">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={documentProjectSelections[document.id] ?? document.project_id ?? ""}
+                      onChange={(event) =>
+                        setDocumentProjectSelections((currentSelections) => ({
+                          ...currentSelections,
+                          [document.id]: event.target.value,
+                        }))
+                      }
+                      disabled={savingDocumentId === document.id}
+                      className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                    >
+                      <option value="">Global Vault</option>
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
 
-<div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[260px]">
-  <div className="flex items-center gap-2">
-    <select
-      value={documentProjectSelections[document.id] ?? document.project_id ?? ""}
-      onChange={(e) =>
-        setDocumentProjectSelections((currentSelections) => ({
-          ...currentSelections,
-          [document.id]: e.target.value,
-        }))
-      }
-      disabled={savingDocumentId === document.id}
-      className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-    >
-      <option value="">Global Vault</option>
-      {projects.map((project) => (
-        <option key={project.id} value={project.id}>
-          {project.name}
-        </option>
-      ))}
-    </select>
+                    <button
+                      onClick={() => saveDocumentProject(document)}
+                      disabled={
+                        savingDocumentId === document.id ||
+                        (documentProjectSelections[document.id] ?? document.project_id ?? "") === (document.project_id ?? "")
+                      }
+                      className="rounded-lg bg-yellow-500 px-3 py-2 text-sm font-medium text-black transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {savingDocumentId === document.id ? "Saving..." : document.project_id ? "Save" : "Assign"}
+                    </button>
+                  </div>
 
-    <button
-      onClick={() => saveDocumentProject(document)}
-      disabled={savingDocumentId === document.id || (documentProjectSelections[document.id] ?? document.project_id ?? "") === (document.project_id ?? "")}
-      className="rounded-lg bg-yellow-500 px-3 py-2 text-sm font-medium text-black transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      {savingDocumentId === document.id ? "Saving..." : document.project_id ? "Save" : "Assign"}
-    </button>
-  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => (isImageDocument(document) ? openImagePreview(document) : openFile(document.storage_path))}
+                      className="rounded-lg p-2 text-slate-400 transition hover:bg-yellow-500/10 hover:text-yellow-400"
+                    >
+                      <Eye size={18} />
+                    </button>
 
-  <div className="flex items-center justify-end gap-2">
-    <button
-      onClick={() => openFile(document.storage_path)}
-      className="p-2 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-yellow-500/10 transition"
-    >
-      <Eye size={18} />
-    </button>
+                    <button
+                      onClick={() => copyFileUrl(document)}
+                      className="rounded-lg p-2 text-slate-400 transition hover:bg-yellow-500/10 hover:text-yellow-400"
+                    >
+                      <LinkIcon size={18} />
+                    </button>
 
-    <button
-      onClick={() => downloadFile(document.storage_path, document.filename)}
-      className="p-2 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-yellow-500/10 transition"
-    >
-      <Download size={18} />
-    </button>
+                    <button
+                      onClick={() => downloadFile(document.storage_path, document.filename)}
+                      className="rounded-lg p-2 text-slate-400 transition hover:bg-yellow-500/10 hover:text-yellow-400"
+                    >
+                      <Download size={18} />
+                    </button>
 
-    <button
-      onClick={() => deleteFile(document.id, document.storage_path)}
-      className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
-    >
-      <Trash2 size={18} />
-    </button>
-  </div>
-</div>
-</div>
-  ))
-)}
+                    <button
+                      onClick={() => deleteFile(document.id, document.storage_path)}
+                      className="rounded-lg p-2 text-slate-400 transition hover:bg-red-500/10 hover:text-red-400"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {filteredDocuments.map((document) => {
+                const isImage = isImageDocument(document);
+                const thumbnail = signedUrls[document.id] || null;
 
+                return (
+                  <div
+                    key={document.id}
+                    className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-800"
+                  >
+                    <div className="relative h-36 w-full border-b border-slate-700 bg-slate-900">
+                      {isImage && thumbnail ? (
+                        <img
+                          src={thumbnail}
+                          alt={document.filename || "Image asset"}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-slate-400">
+                          {isImage ? <ImageIcon size={28} /> : <FileText size={28} />}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-1 flex-col gap-2 p-3">
+                      <p className="break-all text-sm font-medium text-white">{document.filename || document.storage_path}</p>
+
+                      <div className="flex flex-wrap gap-2">
+                        <span className="inline-flex rounded-full bg-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-100">
+                          {getFileTypeBadge(document)}
+                        </span>
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                            document.status === "image_asset"
+                              ? "bg-cyan-500/15 text-cyan-300"
+                              : "bg-green-500/15 text-green-300"
+                          }`}
+                        >
+                          {document.status || "unknown"}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-slate-400">{document.projectName || "Global Vault"}</p>
+                      <p className="text-xs text-slate-500">
+                        {document.created_at ? new Date(document.created_at).toLocaleDateString() : "No date"}
+                      </p>
+
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => (isImage ? openImagePreview(document) : openFile(document.storage_path))}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-600 px-2.5 py-1.5 text-xs text-slate-200 hover:text-white"
+                        >
+                          <Eye size={13} />
+                          View
+                        </button>
+
+                        <button
+                          onClick={() => copyFileUrl(document)}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-600 px-2.5 py-1.5 text-xs text-slate-200 hover:text-white"
+                        >
+                          <LinkIcon size={13} />
+                          Copy URL
+                        </button>
+
+                        <button
+                          onClick={() => deleteFile(document.id, document.storage_path)}
+                          className="inline-flex items-center gap-1 rounded-md border border-red-500/40 px-2.5 py-1.5 text-xs text-red-300 hover:text-red-200"
+                        >
+                          <Trash2 size={13} />
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
+
+      {previewDocument && previewUrl ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-700 bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">
+                  {previewDocument.filename || previewDocument.storage_path}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {previewDocument.projectName || "Global Vault"} • {previewDocument.status || "unknown"}
+                </p>
+              </div>
+              <button
+                onClick={closeImagePreview}
+                className="rounded-md p-1 text-slate-300 hover:bg-slate-800 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="max-h-[75vh] overflow-auto bg-slate-950 p-3">
+              <img
+                src={previewUrl}
+                alt={previewDocument.filename || "Image preview"}
+                className="mx-auto h-auto max-h-[70vh] w-auto max-w-full rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
