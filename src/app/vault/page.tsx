@@ -20,9 +20,65 @@ type VaultDocument = {
   projectName?: string | null;
 };
 
+type UploadQueueStatus = "waiting" | "uploading" | "uploaded" | "failed";
+
+type UploadQueueItem = {
+  id: string;
+  file: File;
+  filename: string;
+  mimeType: string;
+  size: number;
+  status: UploadQueueStatus;
+  error?: string;
+};
+
+const supportedMimeTypes = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "text/csv",
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+]);
+
+const supportedExtensions = new Set([
+  "pdf",
+  "docx",
+  "txt",
+  "csv",
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+]);
+
+const uploadInputAccept = ".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv,image/png,image/jpeg,image/webp";
+
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function getFileExtension(filename: string) {
+  return filename.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function isSupportedVaultFile(file: File) {
+  const normalizedMimeType = file.type.trim().toLowerCase();
+  if (normalizedMimeType && supportedMimeTypes.has(normalizedMimeType)) {
+    return true;
+  }
+
+  return supportedExtensions.has(getFileExtension(file.name));
+}
+
 export default function VaultPage() {
 
   const [uploading, setUploading] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [documents, setDocuments] = useState<VaultDocument[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [documentProjectSelections, setDocumentProjectSelections] = useState<Record<string, string>>({});
@@ -65,41 +121,116 @@ const totalStorageUsedMB = (totalStorageUsed / 1024 / 1024).toFixed(2);
 
   setProjects((result.projects ?? []) as ProjectOption[]);
 };
-  const handleUpload = async (
-  event: React.ChangeEvent<HTMLInputElement>
-) => {
-  const file = event.target.files?.[0];
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
 
-  if (!file) return;
-
-  setUploading(true);
-
-    const formData = new FormData();
-    formData.append("file", file);
-    if (selectedProjectId.trim()) {
-      formData.append("projectId", selectedProjectId.trim());
+    if (selectedFiles.length === 0) {
+      return;
     }
 
-    const response = await fetch("/api/vault/upload", {
-      method: "POST",
-      body: formData,
+    const scopeLabel = selectedProjectId
+      ? projects.find((project) => project.id === selectedProjectId)?.name || "selected project"
+      : "Global Vault";
+
+    const queueItems: UploadQueueItem[] = selectedFiles.map((file, index) => {
+      const supported = isSupportedVaultFile(file);
+
+      return {
+        id: `${Date.now()}-${index}-${file.name}`,
+        file,
+        filename: file.name,
+        mimeType: file.type || `.${getFileExtension(file.name)}`,
+        size: file.size,
+        status: supported ? "waiting" : "failed",
+        error: supported ? undefined : "Unsupported file type.",
+      };
     });
 
-    const result = await response.json();
+    setUploadQueue(queueItems);
+    setUploading(true);
+    setNotice(null);
 
-    if (!response.ok) {
-      setNotice({ type: "error", message: result.error || "Upload failed." });
-    } else {
-      const scopeLabel = selectedProjectId
-        ? projects.find((project) => project.id === selectedProjectId)?.name || "selected project"
-        : "Global Vault";
-      setNotice({ type: "success", message: `Upload successful! Scope: ${scopeLabel}` });
-      await loadFiles();
+    let uploadedCount = 0;
+    let failedCount = queueItems.filter((item) => item.status === "failed").length;
+
+    for (const item of queueItems) {
+      if (item.status === "failed") {
+        continue;
+      }
+
+      setUploadQueue((currentQueue) =>
+        currentQueue.map((currentItem) =>
+          currentItem.id === item.id
+            ? { ...currentItem, status: "uploading", error: undefined }
+            : currentItem
+        )
+      );
+
+      try {
+        const formData = new FormData();
+        formData.append("file", item.file);
+        if (selectedProjectId.trim()) {
+          formData.append("projectId", selectedProjectId.trim());
+        }
+
+        const response = await fetch("/api/vault/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          failedCount += 1;
+          setUploadQueue((currentQueue) =>
+            currentQueue.map((currentItem) =>
+              currentItem.id === item.id
+                ? {
+                    ...currentItem,
+                    status: "failed",
+                    error: result.error || "Upload failed.",
+                  }
+                : currentItem
+            )
+          );
+          continue;
+        }
+
+        uploadedCount += 1;
+        setUploadQueue((currentQueue) =>
+          currentQueue.map((currentItem) =>
+            currentItem.id === item.id
+              ? { ...currentItem, status: "uploaded", error: undefined }
+              : currentItem
+          )
+        );
+      } catch (uploadError: any) {
+        failedCount += 1;
+        setUploadQueue((currentQueue) =>
+          currentQueue.map((currentItem) =>
+            currentItem.id === item.id
+              ? {
+                  ...currentItem,
+                  status: "failed",
+                  error: uploadError?.message ?? "Upload failed.",
+                }
+              : currentItem
+          )
+        );
+      }
     }
 
-  setUploading(false);
-  event.target.value = "";
-};
+    await loadFiles();
+
+    if (failedCount === 0) {
+      setNotice({ type: "success", message: `Uploaded ${uploadedCount} of ${queueItems.length} files. Scope: ${scopeLabel}` });
+    } else {
+      setNotice({ type: "error", message: `Uploaded ${uploadedCount} of ${queueItems.length} files. ${failedCount} failed. Scope: ${scopeLabel}` });
+    }
+
+    setUploading(false);
+    event.target.value = "";
+  };
 
 const deleteFile = async (documentId: string, storagePath: string) => {
   const confirmDelete = confirm("Delete this file?");
@@ -201,6 +332,17 @@ useEffect(() => {
   loadFiles();
   loadProjects();
 }, []);
+
+  const uploadedQueueCount = uploadQueue.filter((item) => item.status === "uploaded").length;
+  const failedQueueCount = uploadQueue.filter((item) => item.status === "failed").length;
+
+  function queueStatusClass(status: UploadQueueStatus) {
+    if (status === "uploaded") return "bg-green-500/15 text-green-300";
+    if (status === "uploading") return "bg-yellow-500/15 text-yellow-300";
+    if (status === "failed") return "bg-red-500/15 text-red-300";
+    return "bg-slate-700 text-slate-200";
+  }
+
   return (
     <div className="box-border w-full max-w-7xl overflow-x-hidden px-4 py-6 sm:px-6 sm:py-8">
       <div className="mb-6 sm:mb-8">
@@ -260,6 +402,8 @@ useEffect(() => {
 
   <input
   type="file"
+  multiple
+  accept={uploadInputAccept}
   onChange={handleUpload}
   disabled={uploading}
   className="mt-5 box-border w-full max-w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border file:border-slate-600 file:bg-slate-900 file:px-3 file:py-1.5 file:text-sm file:text-slate-100 sm:mt-6"
@@ -274,6 +418,35 @@ useEffect(() => {
   <p className="mt-3 break-words text-xs text-slate-500 sm:mt-4">
     PDF, DOCX, TXT, CSV, PNG, JPG, JPEG, WEBP
   </p>
+
+  {uploadQueue.length > 0 && (
+    <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-left sm:p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-300 sm:text-sm">
+        <span className="rounded-full bg-slate-800 px-2.5 py-1">Selected: {uploadQueue.length}</span>
+        <span className="rounded-full bg-green-500/15 px-2.5 py-1 text-green-300">Uploaded: {uploadedQueueCount}</span>
+        <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-red-300">Failed: {failedQueueCount}</span>
+      </div>
+
+      <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+        {uploadQueue.map((item) => (
+          <div key={item.id} className="rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 max-w-full break-all text-xs text-white sm:text-sm">{item.filename}</p>
+              <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${queueStatusClass(item.status)}`}>
+                {item.status}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400 sm:text-xs">
+              {(item.mimeType || "unknown").toLowerCase()} • {formatFileSize(item.size)}
+            </p>
+            {item.error ? (
+              <p className="mt-1 text-[11px] text-red-300 sm:text-xs">{item.error}</p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
 </div>
 
         {/* Stats */}
