@@ -1489,22 +1489,40 @@ export default function ContentStudioPage() {
                           </div>
 
                           <div className="space-y-4">
-                            <PromptCard
-                              title="Image Prompt"
-                              badge="Visual"
-                              value={scene.imagePrompt}
-                              copyLabel="Copy Image Prompt"
-                              copied={copiedKey === `scene-image-${scene.sceneNumber}`}
-                              onCopy={() => copyText(scene.imagePrompt, `scene-image-${scene.sceneNumber}`, "Failed to copy image prompt.")}
-                            />
-                            <PromptCard
-                              title="Video Prompt"
-                              badge="Motion"
-                              value={scene.videoPrompt}
-                              copyLabel="Copy Video Prompt"
-                              copied={copiedKey === `scene-video-${scene.sceneNumber}`}
-                              onCopy={() => copyText(scene.videoPrompt, `scene-video-${scene.sceneNumber}`, "Failed to copy video prompt.")}
-                            />
+                            <div className="rounded-2xl border border-slate-800 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Image Prompt</p>
+                                  <StatusBadge label="Visual" tone="slate" />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => copyText(scene.imagePrompt, `scene-image-${scene.sceneNumber}`, "Failed to copy image prompt.")}
+                                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white max-md:w-full"
+                                >
+                                  <Copy size={16} />
+                                  {copiedKey === `scene-image-${scene.sceneNumber}` ? "Copied" : "Copy Image Prompt"}
+                                </button>
+                              </div>
+                              <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200 md:text-[15px]">{scene.imagePrompt}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-800 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Video Prompt</p>
+                                  <StatusBadge label="Motion" tone="slate" />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => copyText(scene.videoPrompt, `scene-video-${scene.sceneNumber}`, "Failed to copy video prompt.")}
+                                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white max-md:w-full"
+                                >
+                                  <Copy size={16} />
+                                  {copiedKey === `scene-video-${scene.sceneNumber}` ? "Copied" : "Copy Video Prompt"}
+                                </button>
+                              </div>
+                              <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200 md:text-[15px]">{scene.videoPrompt}</div>
+                            </div>
                           </div>
                         </div>
                       </div>
