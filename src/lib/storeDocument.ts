@@ -1,5 +1,7 @@
+import { analyzeImageDocument } from "@/lib/analyzeImageDocument";
 import { ingestDocument } from "@/lib/ingestDocument";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { buildBaseImageMetadata, mergeDocumentMetadata } from "@/lib/vaultDocumentMetadata";
 
 type StoreDocumentInput = {
   buffer: Buffer;
@@ -15,6 +17,9 @@ type StoredDocumentResult = {
   indexed: boolean;
   chunks?: number;
   indexingError?: string;
+  metadataColumnAvailable?: boolean;
+  aiVisionStatus?: "completed" | "failed" | "unavailable";
+  aiVisionMessage?: string;
 };
 
 const imageMimeTypes = new Set([
@@ -54,11 +59,6 @@ function isImageAsset(mimeType: string, filename: string) {
   return imageExtensions.has(extension);
 }
 
-function isMissingMetadataColumnError(message: string) {
-  const normalizedMessage = message.toLowerCase();
-  return normalizedMessage.includes("metadata") && normalizedMessage.includes("does not exist");
-}
-
 async function setImageAssetStatus(documentId: string) {
   const { error: imageStatusError } = await supabaseAdmin
     .from("documents")
@@ -73,23 +73,6 @@ async function setImageAssetStatus(documentId: string) {
     .from("documents")
     .update({ status: fallbackSuccessStatus })
     .eq("id", documentId);
-}
-
-async function setImageAssetMetadata(documentId: string, mimeType: string) {
-  const metadataPayload = {
-    assetType: "image",
-    imageMimeType: mimeType,
-    imageProcessing: "skipped_text_extraction",
-  };
-
-  const { error } = await supabaseAdmin
-    .from("documents")
-    .update({ metadata: metadataPayload } as any)
-    .eq("id", documentId);
-
-  if (error && !isMissingMetadataColumnError(error.message)) {
-    console.warn("Failed to save image metadata", error.message);
-  }
 }
 
 function buildStoragePath(filename: string) {
@@ -136,8 +119,21 @@ export async function storeAndIngestDocument({
   }
 
   if (isImageAsset(normalizedMimeType, filename)) {
-    await setImageAssetMetadata(document.id, normalizedMimeType);
     await setImageAssetStatus(document.id);
+
+    const metadataSaveResult = await mergeDocumentMetadata(
+      document.id,
+      buildBaseImageMetadata(normalizedMimeType)
+    );
+
+    if (!metadataSaveResult.saved && metadataSaveResult.error) {
+      console.warn("Failed to save image metadata", metadataSaveResult.error);
+    }
+
+    const analysisResult = await analyzeImageDocument(document.id, {
+      force: false,
+      allowTransientWithoutStorage: false,
+    });
 
     return {
       success: true,
@@ -145,6 +141,9 @@ export async function storeAndIngestDocument({
       storagePath,
       indexed: true,
       chunks: 0,
+      metadataColumnAvailable: analysisResult.metadataColumnAvailable,
+      aiVisionStatus: analysisResult.aiVision?.status ?? "unavailable",
+      aiVisionMessage: analysisResult.message,
     };
   }
 

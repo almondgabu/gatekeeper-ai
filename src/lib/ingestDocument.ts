@@ -2,6 +2,7 @@ import { chunkText } from "@/lib/chunkText";
 import { createEmbedding } from "@/lib/embeddings";
 import { extractText } from "@/lib/extractText";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { buildBaseImageMetadata, mergeDocumentMetadata } from "@/lib/vaultDocumentMetadata";
 
 const imageMimeTypes = new Set([
   "image/png",
@@ -125,11 +126,6 @@ async function markDocumentFailed(documentId: string, errorMessage: string) {
   });
 }
 
-function isMissingMetadataColumnError(message: string) {
-  const normalizedMessage = message.toLowerCase();
-  return normalizedMessage.includes("metadata") && normalizedMessage.includes("does not exist");
-}
-
 async function markImageAssetReady(documentId: string, mimeType: string) {
   const { error: imageStatusError } = await supabaseAdmin
     .from("documents")
@@ -143,19 +139,10 @@ async function markImageAssetReady(documentId: string, mimeType: string) {
       .eq("id", documentId);
   }
 
-  const metadataPayload = {
-    assetType: "image",
-    imageMimeType: mimeType,
-    imageProcessing: "skipped_text_extraction",
-  };
+  const metadataResult = await mergeDocumentMetadata(documentId, buildBaseImageMetadata(mimeType));
 
-  const { error: metadataError } = await supabaseAdmin
-    .from("documents")
-    .update({ metadata: metadataPayload } as any)
-    .eq("id", documentId);
-
-  if (metadataError && !isMissingMetadataColumnError(metadataError.message)) {
-    console.warn("Failed to save image metadata", metadataError.message);
+  if (!metadataResult.saved && metadataResult.error) {
+    console.warn("Failed to save image metadata", metadataResult.error);
   }
 }
 

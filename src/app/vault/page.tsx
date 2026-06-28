@@ -9,12 +9,32 @@ type ProjectOption = {
   name: string;
 };
 
+type VaultAIVision = {
+  status: "completed" | "failed";
+  aiDescription?: string;
+  detectedScene?: string;
+  suggestedTags?: string[];
+  possibleUseCases?: string[];
+  confidenceNotes?: string;
+  error?: string;
+  model?: string;
+  analyzedAt?: string;
+};
+
+type VaultDocumentMetadata = {
+  assetType?: string;
+  imageMimeType?: string;
+  imageProcessing?: string;
+  aiVision?: VaultAIVision;
+};
+
 type VaultDocument = {
   id: string;
   filename: string | null;
   storage_path: string;
   status: string | null;
   mime_type?: string | null;
+  metadata?: VaultDocumentMetadata | null;
   created_at?: string | null;
   file_size?: number | null;
   project_id?: string | null;
@@ -96,6 +116,76 @@ function getFileTypeBadge(document: VaultDocument) {
   return "Document";
 }
 
+function getDocumentAIVision(document: VaultDocument) {
+  return document.metadata?.aiVision ?? null;
+}
+
+function getDocumentAIStatus(document: VaultDocument): "analyzed" | "failed" | "pending" | "unavailable" | null {
+  if (!isImageDocument(document)) {
+    return null;
+  }
+
+  const aiVision = getDocumentAIVision(document);
+
+  if (aiVision?.status === "completed") {
+    return "analyzed";
+  }
+
+  if (aiVision?.status === "failed") {
+    return "failed";
+  }
+
+  if (document.metadata) {
+    return "pending";
+  }
+
+  return "unavailable";
+}
+
+function getAIStatusBadge(status: "analyzed" | "failed" | "pending" | "unavailable") {
+  if (status === "analyzed") {
+    return {
+      label: "AI analyzed",
+      className: "bg-emerald-500/15 text-emerald-300",
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      label: "AI failed",
+      className: "bg-red-500/15 text-red-300",
+    };
+  }
+
+  if (status === "pending") {
+    return {
+      label: "AI pending",
+      className: "bg-amber-500/15 text-amber-200",
+    };
+  }
+
+  return {
+    label: "AI unavailable",
+    className: "bg-slate-700 text-slate-200",
+  };
+}
+
+function getDocumentSearchText(document: VaultDocument) {
+  const aiVision = getDocumentAIVision(document);
+
+  return [
+    document.filename || document.storage_path,
+    document.storage_path,
+    document.projectName || "",
+    aiVision?.aiDescription || "",
+    aiVision?.detectedScene || "",
+    ...(aiVision?.suggestedTags || []),
+    ...(aiVision?.possibleUseCases || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
 function queueStatusClass(status: UploadQueueStatus) {
   if (status === "uploaded") return "bg-green-500/15 text-green-300";
   if (status === "uploading") return "bg-yellow-500/15 text-yellow-300";
@@ -107,9 +197,11 @@ export default function VaultPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [documents, setDocuments] = useState<VaultDocument[]>([]);
+  const [metadataColumnAvailable, setMetadataColumnAvailable] = useState(true);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [documentProjectSelections, setDocumentProjectSelections] = useState<Record<string, string>>({});
   const [savingDocumentId, setSavingDocumentId] = useState<string | null>(null);
+  const [analyzingDocumentId, setAnalyzingDocumentId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -121,9 +213,7 @@ export default function VaultPage() {
 
   const filteredDocuments = useMemo(() => {
     return documents.filter((document) => {
-      const matchesSearch = (document.filename || document.storage_path)
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
+      const matchesSearch = getDocumentSearchText(document).includes(searchTerm.toLowerCase());
 
       if (!matchesSearch) {
         return false;
@@ -156,6 +246,7 @@ export default function VaultPage() {
     }
 
     const nextDocuments = (result.documents ?? []) as VaultDocument[];
+    setMetadataColumnAvailable(result.metadataColumnAvailable !== false);
     setDocuments(nextDocuments);
     setDocumentProjectSelections(
       Object.fromEntries(nextDocuments.map((document) => [document.id, document.project_id ?? ""]))
@@ -232,6 +323,7 @@ export default function VaultPage() {
 
     let uploadedCount = 0;
     let failedCount = queueItems.filter((item) => item.status === "failed").length;
+    const aiVisionMessages: string[] = [];
 
     for (const item of queueItems) {
       if (item.status === "failed") {
@@ -277,6 +369,9 @@ export default function VaultPage() {
         }
 
         uploadedCount += 1;
+        if (typeof result.aiVisionMessage === "string" && result.aiVisionMessage.trim()) {
+          aiVisionMessages.push(`${item.filename}: ${result.aiVisionMessage.trim()}`);
+        }
         setUploadQueue((currentQueue) =>
           currentQueue.map((currentItem) =>
             currentItem.id === item.id
@@ -305,12 +400,16 @@ export default function VaultPage() {
     if (failedCount === 0) {
       setNotice({
         type: "success",
-        message: `Uploaded ${uploadedCount} of ${queueItems.length} files. Scope: ${scopeLabel}`,
+        message: `Uploaded ${uploadedCount} of ${queueItems.length} files. Scope: ${scopeLabel}${
+          aiVisionMessages.length > 0 ? ` AI: ${aiVisionMessages[0]}` : ""
+        }`,
       });
     } else {
       setNotice({
         type: "error",
-        message: `Uploaded ${uploadedCount} of ${queueItems.length} files. ${failedCount} failed. Scope: ${scopeLabel}`,
+        message: `Uploaded ${uploadedCount} of ${queueItems.length} files. ${failedCount} failed. Scope: ${scopeLabel}${
+          aiVisionMessages.length > 0 ? ` AI: ${aiVisionMessages[0]}` : ""
+        }`,
       });
     }
 
@@ -433,6 +532,62 @@ export default function VaultPage() {
   const closeImagePreview = () => {
     setPreviewDocument(null);
     setPreviewUrl(null);
+  };
+
+  const mergeDocumentMetadata = (documentId: string, metadata: VaultDocumentMetadata | null) => {
+    setDocuments((currentDocuments) =>
+      currentDocuments.map((document) => (document.id === documentId ? { ...document, metadata } : document))
+    );
+
+    setPreviewDocument((currentDocument) =>
+      currentDocument && currentDocument.id === documentId
+        ? { ...currentDocument, metadata }
+        : currentDocument
+    );
+  };
+
+  const analyzeDocumentImage = async (document: VaultDocument, force = true) => {
+    setAnalyzingDocumentId(document.id);
+
+    try {
+      const response = await fetch("/api/vault/analyze-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          documentId: document.id,
+          force,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "AI image analysis failed.");
+      }
+
+      setMetadataColumnAvailable(result.metadataColumnAvailable !== false);
+
+      if (result.metadata) {
+        mergeDocumentMetadata(document.id, result.metadata as VaultDocumentMetadata);
+      }
+
+      setNotice({
+        type: result.aiVision?.status === "failed" ? "error" : "success",
+        message:
+          typeof result.message === "string" && result.message.trim()
+            ? result.message
+            : "AI image analysis completed.",
+      });
+    } catch (error: any) {
+      setNotice({
+        type: "error",
+        message: error?.message || "AI image analysis failed.",
+      });
+    } finally {
+      setAnalyzingDocumentId(null);
+    }
   };
 
   useEffect(() => {
@@ -643,6 +798,11 @@ export default function VaultPage() {
                 key={document.id}
                 className="flex flex-col gap-3 rounded-xl bg-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between"
               >
+                {(() => {
+                  const aiStatus = getDocumentAIStatus(document);
+                  const aiBadge = aiStatus ? getAIStatusBadge(aiStatus) : null;
+
+                  return (
                 <div className="min-w-0 flex items-center gap-3">
                   <FileText size={18} className="shrink-0 text-yellow-400" />
 
@@ -659,6 +819,13 @@ export default function VaultPage() {
                       >
                         {document.projectName || "Global Vault"}
                       </span>
+                      {aiBadge ? (
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${aiBadge.className}`}
+                        >
+                          {aiBadge.label}
+                        </span>
+                      ) : null}
                     </div>
 
                     <p className="text-xs text-slate-400">
@@ -670,6 +837,8 @@ export default function VaultPage() {
                     </p>
                   </div>
                 </div>
+                  );
+                })()}
 
                 <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[260px]">
                   <div className="flex items-center gap-2">
@@ -741,6 +910,10 @@ export default function VaultPage() {
               {filteredDocuments.map((document) => {
                 const isImage = isImageDocument(document);
                 const thumbnail = signedUrls[document.id] || null;
+                const aiVision = getDocumentAIVision(document);
+                const aiStatus = getDocumentAIStatus(document);
+                const aiBadge = aiStatus ? getAIStatusBadge(aiStatus) : null;
+                const tagPreview = aiVision?.suggestedTags?.slice(0, 5) ?? [];
 
                 return (
                   <div
@@ -777,12 +950,40 @@ export default function VaultPage() {
                         >
                           {document.status || "unknown"}
                         </span>
+                        {aiBadge ? (
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${aiBadge.className}`}
+                          >
+                            {aiBadge.label}
+                          </span>
+                        ) : null}
                       </div>
 
                       <p className="text-xs text-slate-400">{document.projectName || "Global Vault"}</p>
                       <p className="text-xs text-slate-500">
                         {document.created_at ? new Date(document.created_at).toLocaleDateString() : "No date"}
                       </p>
+
+                      {tagPreview.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {tagPreview.map((tag) => (
+                            <span
+                              key={`${document.id}-${tag}`}
+                              className="inline-flex rounded-full bg-yellow-500/10 px-2 py-0.5 text-[10px] font-medium text-yellow-200"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {!aiVision && isImage ? (
+                        <p className="text-xs text-slate-500">
+                          {metadataColumnAvailable
+                            ? "AI analysis pending/unavailable."
+                            : "AI analysis unavailable in this environment."}
+                        </p>
+                      ) : null}
 
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         <button
@@ -844,6 +1045,109 @@ export default function VaultPage() {
                 alt={previewDocument.filename || "Image preview"}
                 className="mx-auto h-auto max-h-[70vh] w-auto max-w-full rounded-lg"
               />
+
+              {isImageDocument(previewDocument) ? (
+                <div className="mx-auto mt-4 max-w-3xl rounded-xl border border-slate-800 bg-slate-900 p-4 text-left">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-white">AI Image Analysis</h3>
+                    <button
+                      type="button"
+                      onClick={() => analyzeDocumentImage(previewDocument, true)}
+                      disabled={analyzingDocumentId === previewDocument.id}
+                      className="rounded-lg border border-yellow-500/50 px-3 py-1.5 text-xs font-medium text-yellow-200 transition hover:bg-yellow-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {analyzingDocumentId === previewDocument.id ? "Analyzing..." : "Analyze Image"}
+                    </button>
+                  </div>
+
+                  {(() => {
+                    const aiVision = getDocumentAIVision(previewDocument);
+
+                    if (!aiVision) {
+                      return (
+                        <p className="text-sm text-slate-400">
+                          {metadataColumnAvailable
+                            ? "AI analysis pending/unavailable."
+                            : "AI analysis unavailable because documents.metadata does not exist in this environment."}
+                        </p>
+                      );
+                    }
+
+                    if (aiVision.status === "failed") {
+                      return (
+                        <div className="space-y-2">
+                          <span className="inline-flex rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-medium text-red-300">
+                            AI failed
+                          </span>
+                          <p className="text-sm text-red-300">
+                            AI analysis failed safely. {aiVision.error || "No additional error details."}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-3 text-sm text-slate-200">
+                        <span className="inline-flex rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-300">
+                          AI analyzed
+                        </span>
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Description</p>
+                          <p className="mt-1 text-sm leading-6 text-slate-200">
+                            {aiVision.aiDescription || "No description available."}
+                          </p>
+                        </div>
+
+                        {aiVision.detectedScene ? (
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Detected Scene</p>
+                            <p className="mt-1 text-sm text-slate-200">{aiVision.detectedScene}</p>
+                          </div>
+                        ) : null}
+
+                        {aiVision.suggestedTags && aiVision.suggestedTags.length > 0 ? (
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Tags</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {aiVision.suggestedTags.map((tag) => (
+                                <span
+                                  key={`${previewDocument.id}-${tag}`}
+                                  className="inline-flex rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-200"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {aiVision.possibleUseCases && aiVision.possibleUseCases.length > 0 ? (
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Possible Use Cases</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {aiVision.possibleUseCases.map((useCase) => (
+                                <span
+                                  key={`${previewDocument.id}-${useCase}`}
+                                  className="inline-flex rounded-full bg-cyan-500/10 px-2.5 py-1 text-xs font-medium text-cyan-200"
+                                >
+                                  {useCase}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {aiVision.confidenceNotes ? (
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Confidence Notes</p>
+                            <p className="mt-1 text-sm text-slate-300">{aiVision.confidenceNotes}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
