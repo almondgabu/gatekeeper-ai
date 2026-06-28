@@ -530,6 +530,7 @@ export async function POST(request: Request) {
       const ideaCount = Number(body?.ideaCount ?? (mode === "inspiration-refresh" ? 1 : 10));
       const topic = normalizeText(body?.topic);
       const imageDataUrl = normalizeText(body?.imageDataUrl);
+      const context = normalizeText(body?.context);
       const excludeTitles = Array.isArray(body?.excludeTitles)
         ? body.excludeTitles.map((value: unknown) => normalizeText(value)).filter(Boolean)
         : [];
@@ -564,6 +565,9 @@ export async function POST(request: Request) {
       const sourceSummary = sourceType === "topic"
         ? `Topic from user: ${topic}`
         : "User uploaded a screenshot/image as the inspiration source. Infer practical context only from visible clues.";
+      const additionalUserContext = context
+        ? `\nAdditional user context:\n${context}\n\nUse this context to understand the image/topic better and generate ideas that are more relevant, practical, and targeted.`
+        : "";
 
       const prompt = `
 You are Gatekeeper AI Idea Explorer for Borneo Land Gatekeeper.
@@ -597,6 +601,7 @@ Context:
 - Goal: ${goal}
 - Source Type: ${sourceType}
 - ${sourceSummary}
+${additionalUserContext}
 `;
 
       const response = await client.responses.create({

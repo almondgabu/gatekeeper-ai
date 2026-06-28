@@ -103,6 +103,7 @@ type SavedHistoryItem = {
     equipment?: string[];
     ideaSourceType?: "topic" | "image";
     ideaTopic?: string;
+    ideaContext?: string;
     ideaGoal?: string;
     imageName?: string;
   };
@@ -169,6 +170,7 @@ const ideaExplorerGoals = [
 const savedHistoryStorageKey = "gatekeeper-content-studio-history";
 const supportedIdeaImageMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 const unsupportedImageFormatMessage = "Unsupported image format. Please upload PNG, JPG, JPEG, or WEBP.";
+const maxIdeaContextLength = 1500;
 
 function normalizeStudioContentType(value: string) {
   const normalized = value.trim().toLowerCase();
@@ -418,6 +420,7 @@ export default function ContentStudioPage() {
   const [equipment, setEquipment] = useState<string[]>(["Phone", "Gimbal"]);
   const [ideaSourceType, setIdeaSourceType] = useState<"topic" | "image">("topic");
   const [ideaTopic, setIdeaTopic] = useState("");
+  const [ideaContext, setIdeaContext] = useState("");
   const [ideaGoal, setIdeaGoal] = useState("educate");
   const [ideaImageDataUrl, setIdeaImageDataUrl] = useState<string | null>(null);
   const [ideaImageName, setIdeaImageName] = useState<string | null>(null);
@@ -508,10 +511,11 @@ export default function ContentStudioPage() {
       sourceType: ideaSourceType,
       topic: ideaSourceType === "topic" ? ideaTopic.trim() : "",
       imageDataUrl: ideaSourceType === "image" ? ideaImageDataUrl : null,
+      context: ideaContext.trim(),
       goal: ideaGoal,
       ideaCount: 10,
     }),
-    [ideaSourceType, ideaTopic, ideaImageDataUrl, ideaGoal],
+    [ideaSourceType, ideaTopic, ideaImageDataUrl, ideaContext, ideaGoal],
   );
 
   const visibleIdeas = ideaPages[ideaPageIndex] ?? [];
@@ -868,6 +872,7 @@ export default function ContentStudioPage() {
         context: {
           ideaSourceType,
           ideaTopic,
+          ideaContext,
           ideaGoal,
           imageName: ideaImageName ?? undefined,
         },
@@ -909,6 +914,7 @@ export default function ContentStudioPage() {
       setIdeaPageIndex(0);
       setIdeaSourceType(item.context?.ideaSourceType ?? "topic");
       setIdeaTopic(item.context?.ideaTopic ?? "");
+      setIdeaContext(item.context?.ideaContext ?? "");
       setIdeaGoal(normalizeExplorerGoal(item.context?.ideaGoal));
       setError(null);
     }
@@ -1106,6 +1112,26 @@ export default function ContentStudioPage() {
                     ) : null}
                   </div>
                 )}
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                <p className="text-lg font-semibold text-white">✨ Additional Context (Optional)</p>
+                <p className="mt-2 text-sm text-slate-300">
+                  Help AI understand your image or topic. Add details that AI cannot know from the image alone.
+                </p>
+                <div className="mt-4">
+                  <textarea
+                    value={ideaContext}
+                    onChange={(event) => setIdeaContext(event.target.value.slice(0, maxIdeaContextLength))}
+                    rows={8}
+                    placeholder={"Example:\nThis is a parcel land in Kundasang.\nAsking price RM160,000.\nAbout 1 acre.\nSuitable for homestay.\nFronting gravel road.\nBeautiful Mount Kinabalu view.\nOwner willing to negotiate.\nTarget investors."}
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-4 text-sm text-white placeholder:text-slate-500"
+                  />
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-400">
+                  <p>Optional, but highly recommended for more accurate ideas.</p>
+                  <p>{ideaContext.length} / {maxIdeaContextLength}</p>
+                </div>
               </div>
 
               <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
