@@ -16,6 +16,8 @@ export type AIVisionMetadata = {
   analyzedAt?: string;
 };
 
+export const KNOWLEDGE_SCHEMA_VERSION = "v5.0";
+
 export type KnowledgeStatus = "completed" | "failed" | "skipped";
 
 export type KnowledgePropertyDetails = {
@@ -23,14 +25,42 @@ export type KnowledgePropertyDetails = {
   landSize?: string;
   district?: string;
   coordinates?: string;
+  access?: string;
+  roadFrontage?: string;
+  askingPrice?: string;
   price?: string;
   usage?: string;
   restrictions?: string;
 };
 
+export type KnowledgeBusinessInsights = {
+  negotiations: string[];
+  commitments: string[];
+  deadlines: string[];
+  followUpActions: string[];
+};
+
+export type KnowledgeLegalInsights = {
+  plaintiff: string[];
+  defendant: string[];
+  lawyers: string[];
+  claims: string[];
+  evidence: string[];
+  courtDates: string[];
+};
+
+export type KnowledgeMarketingInsights = {
+  sellingPoints: string[];
+  weaknesses: string[];
+  buyerObjections: string[];
+  opportunities: string[];
+};
+
 export type DocumentKnowledgeMetadata = {
   status: KnowledgeStatus;
+  version: string;
   extractedAt: string;
+  updatedAt: string;
   model: string;
   summary: string;
   keyFacts: string[];
@@ -38,13 +68,22 @@ export type DocumentKnowledgeMetadata = {
   companies: string[];
   locations: string[];
   propertyDetails: KnowledgePropertyDetails;
+  landInformation: string[];
+  prices: string[];
   dates: string[];
   risks: string[];
   tasks: string[];
   decisions: string[];
   suggestedQuestions: string[];
   relatedProjectHints: string[];
+  relatedDocumentHints: string[];
   contentIdeas: string[];
+  importantNumbers: string[];
+  relationships: string[];
+  confidenceScore: number;
+  businessInsights: KnowledgeBusinessInsights;
+  legalInsights: KnowledgeLegalInsights;
+  marketingInsights: KnowledgeMarketingInsights;
   error?: string;
 };
 

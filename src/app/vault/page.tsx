@@ -1,6 +1,19 @@
 "use client";
 
-import { Trash2, FileText, Download, Eye, LayoutGrid, List, Image as ImageIcon, Link as LinkIcon, X } from "lucide-react";
+import {
+  Trash2,
+  FileText,
+  Download,
+  Eye,
+  LayoutGrid,
+  List,
+  Image as ImageIcon,
+  Link as LinkIcon,
+  X,
+  Copy,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -26,14 +39,42 @@ type VaultKnowledgePropertyDetails = {
   landSize?: string;
   district?: string;
   coordinates?: string;
+  access?: string;
+  roadFrontage?: string;
+  askingPrice?: string;
   price?: string;
   usage?: string;
   restrictions?: string;
 };
 
+type VaultKnowledgeBusinessInsights = {
+  negotiations?: string[];
+  commitments?: string[];
+  deadlines?: string[];
+  followUpActions?: string[];
+};
+
+type VaultKnowledgeLegalInsights = {
+  plaintiff?: string[];
+  defendant?: string[];
+  lawyers?: string[];
+  claims?: string[];
+  evidence?: string[];
+  courtDates?: string[];
+};
+
+type VaultKnowledgeMarketingInsights = {
+  sellingPoints?: string[];
+  weaknesses?: string[];
+  buyerObjections?: string[];
+  opportunities?: string[];
+};
+
 type VaultKnowledge = {
   status: "completed" | "failed" | "skipped";
+  version?: string;
   extractedAt?: string;
+  updatedAt?: string;
   model?: string;
   summary?: string;
   keyFacts?: string[];
@@ -41,13 +82,22 @@ type VaultKnowledge = {
   companies?: string[];
   locations?: string[];
   propertyDetails?: VaultKnowledgePropertyDetails;
+  landInformation?: string[];
+  prices?: string[];
   dates?: string[];
   risks?: string[];
   tasks?: string[];
   decisions?: string[];
   suggestedQuestions?: string[];
   relatedProjectHints?: string[];
+  relatedDocumentHints?: string[];
   contentIdeas?: string[];
+  importantNumbers?: string[];
+  relationships?: string[];
+  confidenceScore?: number;
+  businessInsights?: VaultKnowledgeBusinessInsights;
+  legalInsights?: VaultKnowledgeLegalInsights;
+  marketingInsights?: VaultKnowledgeMarketingInsights;
   error?: string;
 };
 
@@ -263,10 +313,44 @@ function getKnowledgePropertyDetails(document: VaultDocument) {
     propertyDetails.landSize,
     propertyDetails.district,
     propertyDetails.coordinates,
+    propertyDetails.access,
+    propertyDetails.roadFrontage,
+    propertyDetails.askingPrice,
     propertyDetails.price,
     propertyDetails.usage,
     propertyDetails.restrictions,
   ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+function getKnowledgeInsightValues(knowledge: VaultKnowledge | null) {
+  if (!knowledge) {
+    return [] as string[];
+  }
+
+  return [
+    ...(knowledge.businessInsights?.negotiations || []),
+    ...(knowledge.businessInsights?.commitments || []),
+    ...(knowledge.businessInsights?.deadlines || []),
+    ...(knowledge.businessInsights?.followUpActions || []),
+    ...(knowledge.legalInsights?.plaintiff || []),
+    ...(knowledge.legalInsights?.defendant || []),
+    ...(knowledge.legalInsights?.lawyers || []),
+    ...(knowledge.legalInsights?.claims || []),
+    ...(knowledge.legalInsights?.evidence || []),
+    ...(knowledge.legalInsights?.courtDates || []),
+    ...(knowledge.marketingInsights?.sellingPoints || []),
+    ...(knowledge.marketingInsights?.weaknesses || []),
+    ...(knowledge.marketingInsights?.buyerObjections || []),
+    ...(knowledge.marketingInsights?.opportunities || []),
+  ];
+}
+
+function formatKnowledgeList(items: string[] | undefined) {
+  return (items || []).filter((item) => item.trim().length > 0).join("\n");
+}
+
+function hasListValues(items: string[] | undefined) {
+  return Boolean(items && items.length > 0);
 }
 
 function getDocumentSearchText(document: VaultDocument) {
@@ -287,9 +371,19 @@ function getDocumentSearchText(document: VaultDocument) {
     ...(knowledge?.companies || []),
     ...(knowledge?.locations || []),
     ...getKnowledgePropertyDetails(document),
+    ...(knowledge?.landInformation || []),
+    ...(knowledge?.prices || []),
+    ...(knowledge?.dates || []),
     ...(knowledge?.risks || []),
     ...(knowledge?.tasks || []),
+    ...(knowledge?.decisions || []),
     ...(knowledge?.suggestedQuestions || []),
+    ...(knowledge?.relatedProjectHints || []),
+    ...(knowledge?.relatedDocumentHints || []),
+    ...(knowledge?.contentIdeas || []),
+    ...(knowledge?.importantNumbers || []),
+    ...(knowledge?.relationships || []),
+    ...getKnowledgeInsightValues(knowledge),
   ]
     .join(" ")
     .toLowerCase();
@@ -306,6 +400,9 @@ function hasKnowledgeDetails(knowledge: VaultKnowledge | null) {
       (knowledge.people && knowledge.people.length > 0) ||
       (knowledge.locations && knowledge.locations.length > 0) ||
       (knowledge.companies && knowledge.companies.length > 0) ||
+      (knowledge.landInformation && knowledge.landInformation.length > 0) ||
+      (knowledge.prices && knowledge.prices.length > 0) ||
+      (knowledge.dates && knowledge.dates.length > 0) ||
       getKnowledgePropertyDetails({
         id: "",
         filename: null,
@@ -315,7 +412,14 @@ function hasKnowledgeDetails(knowledge: VaultKnowledge | null) {
       }).length > 0 ||
       (knowledge.risks && knowledge.risks.length > 0) ||
       (knowledge.tasks && knowledge.tasks.length > 0) ||
-      (knowledge.suggestedQuestions && knowledge.suggestedQuestions.length > 0)
+      (knowledge.decisions && knowledge.decisions.length > 0) ||
+      (knowledge.suggestedQuestions && knowledge.suggestedQuestions.length > 0) ||
+      (knowledge.relatedProjectHints && knowledge.relatedProjectHints.length > 0) ||
+      (knowledge.relatedDocumentHints && knowledge.relatedDocumentHints.length > 0) ||
+      (knowledge.contentIdeas && knowledge.contentIdeas.length > 0) ||
+      (knowledge.importantNumbers && knowledge.importantNumbers.length > 0) ||
+      (knowledge.relationships && knowledge.relationships.length > 0) ||
+      getKnowledgeInsightValues(knowledge).length > 0
   );
 }
 
@@ -344,6 +448,35 @@ export default function VaultPage() {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [previewDocument, setPreviewDocument] = useState<VaultDocument | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [collapsedKnowledgeSections, setCollapsedKnowledgeSections] = useState<Record<string, boolean>>({});
+
+  const getKnowledgeSectionStateKey = (documentId: string, sectionKey: string) => `${documentId}:${sectionKey}`;
+
+  const isKnowledgeSectionCollapsed = (documentId: string, sectionKey: string) =>
+    collapsedKnowledgeSections[getKnowledgeSectionStateKey(documentId, sectionKey)] === true;
+
+  const toggleKnowledgeSection = (documentId: string, sectionKey: string) => {
+    const stateKey = getKnowledgeSectionStateKey(documentId, sectionKey);
+    setCollapsedKnowledgeSections((currentSections) => ({
+      ...currentSections,
+      [stateKey]: !currentSections[stateKey],
+    }));
+  };
+
+  const copyKnowledgeSection = async (document: VaultDocument, label: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setNotice({
+        type: "success",
+        message: `Copied ${label.toLowerCase()} for ${document.filename || document.storage_path}.`,
+      });
+    } catch (error: any) {
+      setNotice({
+        type: "error",
+        message: error?.message || `Failed to copy ${label.toLowerCase()}.`,
+      });
+    }
+  };
 
   const filteredDocuments = useMemo(() => {
     return documents.filter((document) => {
@@ -1463,49 +1596,105 @@ export default function VaultPage() {
                             {new Date(knowledge.extractedAt).toLocaleString()}
                           </span>
                         ) : null}
+                        {knowledge.version ? <span className="text-xs text-slate-500">{knowledge.version}</span> : null}
+                        {typeof knowledge.confidenceScore === "number" ? (
+                          <span className="text-xs text-slate-500">
+                            Confidence {Math.round(knowledge.confidenceScore * 100)}%
+                          </span>
+                        ) : null}
                       </div>
 
                       {knowledge.summary ? (
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Summary</p>
-                          <p className="mt-1 text-sm leading-6 text-slate-200">{knowledge.summary}</p>
+                        <div className="rounded-xl border border-slate-800 bg-slate-950/40">
+                          <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleKnowledgeSection(previewDocument.id, "summary")}
+                              className="flex items-center gap-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400"
+                            >
+                              {isKnowledgeSectionCollapsed(previewDocument.id, "summary") ? (
+                                <ChevronRight size={14} />
+                              ) : (
+                                <ChevronDown size={14} />
+                              )}
+                              Summary
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => copyKnowledgeSection(previewDocument, "Summary", knowledge.summary || "")}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:text-white"
+                            >
+                              <Copy size={12} />
+                              Copy
+                            </button>
+                          </div>
+                          {!isKnowledgeSectionCollapsed(previewDocument.id, "summary") ? (
+                            <div className="border-t border-slate-800 px-3 py-3">
+                              <p className="text-sm leading-6 text-slate-200">{knowledge.summary}</p>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
 
                       {knowledge.keyFacts && knowledge.keyFacts.length > 0 ? (
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Key Facts</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {knowledge.keyFacts.map((fact) => (
-                              <span
-                                key={`${previewDocument.id}-${fact}`}
-                                className="inline-flex rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-200"
-                              >
-                                {fact}
-                              </span>
-                            ))}
+                        <div className="rounded-xl border border-slate-800 bg-slate-950/40">
+                          <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleKnowledgeSection(previewDocument.id, "keyFacts")}
+                              className="flex items-center gap-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400"
+                            >
+                              {isKnowledgeSectionCollapsed(previewDocument.id, "keyFacts") ? (
+                                <ChevronRight size={14} />
+                              ) : (
+                                <ChevronDown size={14} />
+                              )}
+                              Key Facts
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => copyKnowledgeSection(previewDocument, "Key Facts", formatKnowledgeList(knowledge.keyFacts))}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:text-white"
+                            >
+                              <Copy size={12} />
+                              Copy
+                            </button>
                           </div>
+                          {!isKnowledgeSectionCollapsed(previewDocument.id, "keyFacts") ? (
+                            <div className="border-t border-slate-800 px-3 py-3">
+                              <div className="flex flex-wrap gap-2">
+                                {knowledge.keyFacts.map((fact) => (
+                                  <span
+                                    key={`${previewDocument.id}-${fact}`}
+                                    className="inline-flex rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-200"
+                                  >
+                                    {fact}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
 
-                      {knowledge.people && knowledge.people.length > 0 ? (
+                      {hasListValues(knowledge.people) ? (
                         <div>
                           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">People</p>
-                          <p className="mt-1 text-sm text-slate-200">{knowledge.people.join(", ")}</p>
+                          <p className="mt-1 text-sm text-slate-200">{knowledge.people?.join(", ")}</p>
                         </div>
                       ) : null}
 
-                      {knowledge.locations && knowledge.locations.length > 0 ? (
+                      {hasListValues(knowledge.locations) ? (
                         <div>
                           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Locations</p>
-                          <p className="mt-1 text-sm text-slate-200">{knowledge.locations.join(", ")}</p>
+                          <p className="mt-1 text-sm text-slate-200">{knowledge.locations?.join(", ")}</p>
                         </div>
                       ) : null}
 
-                      {knowledge.companies && knowledge.companies.length > 0 ? (
+                      {hasListValues(knowledge.companies) ? (
                         <div>
                           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Companies</p>
-                          <p className="mt-1 text-sm text-slate-200">{knowledge.companies.join(", ")}</p>
+                          <p className="mt-1 text-sm text-slate-200">{knowledge.companies?.join(", ")}</p>
                         </div>
                       ) : null}
 
@@ -1523,36 +1712,254 @@ export default function VaultPage() {
                         </div>
                       ) : null}
 
-                      {knowledge.risks && knowledge.risks.length > 0 ? (
+                      {hasListValues(knowledge.landInformation) ? (
                         <div>
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Risks</p>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Land Information</p>
                           <ul className="mt-2 space-y-1 text-sm text-slate-200">
-                            {knowledge.risks.map((risk) => (
-                              <li key={`${previewDocument.id}-${risk}`}>• {risk}</li>
+                            {knowledge.landInformation?.map((item) => (
+                              <li key={`${previewDocument.id}-${item}`}>• {item}</li>
                             ))}
                           </ul>
                         </div>
                       ) : null}
 
-                      {knowledge.tasks && knowledge.tasks.length > 0 ? (
+                      {hasListValues(knowledge.prices) ? (
                         <div>
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Tasks</p>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Prices</p>
+                          <p className="mt-1 text-sm text-slate-200">{knowledge.prices?.join(", ")}</p>
+                        </div>
+                      ) : null}
+
+                      {hasListValues(knowledge.importantNumbers) ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Important Numbers</p>
+                          <p className="mt-1 text-sm text-slate-200">{knowledge.importantNumbers?.join(", ")}</p>
+                        </div>
+                      ) : null}
+
+                      {hasListValues(knowledge.relationships) ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Relationships</p>
                           <ul className="mt-2 space-y-1 text-sm text-slate-200">
-                            {knowledge.tasks.map((task) => (
-                              <li key={`${previewDocument.id}-${task}`}>• {task}</li>
+                            {knowledge.relationships?.map((relationship) => (
+                              <li key={`${previewDocument.id}-${relationship}`}>• {relationship}</li>
                             ))}
                           </ul>
                         </div>
                       ) : null}
 
-                      {knowledge.suggestedQuestions && knowledge.suggestedQuestions.length > 0 ? (
+                      {hasListValues(knowledge.risks) ? (
+                        <div className="rounded-xl border border-slate-800 bg-slate-950/40">
+                          <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleKnowledgeSection(previewDocument.id, "risks")}
+                              className="flex items-center gap-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400"
+                            >
+                              {isKnowledgeSectionCollapsed(previewDocument.id, "risks") ? (
+                                <ChevronRight size={14} />
+                              ) : (
+                                <ChevronDown size={14} />
+                              )}
+                              Risks
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => copyKnowledgeSection(previewDocument, "Risks", formatKnowledgeList(knowledge.risks))}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:text-white"
+                            >
+                              <Copy size={12} />
+                              Copy
+                            </button>
+                          </div>
+                          {!isKnowledgeSectionCollapsed(previewDocument.id, "risks") ? (
+                            <div className="border-t border-slate-800 px-3 py-3">
+                              <ul className="space-y-1 text-sm text-slate-200">
+                                {knowledge.risks?.map((risk) => (
+                                  <li key={`${previewDocument.id}-${risk}`}>• {risk}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {hasListValues(knowledge.tasks) ? (
+                        <div className="rounded-xl border border-slate-800 bg-slate-950/40">
+                          <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleKnowledgeSection(previewDocument.id, "tasks")}
+                              className="flex items-center gap-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400"
+                            >
+                              {isKnowledgeSectionCollapsed(previewDocument.id, "tasks") ? (
+                                <ChevronRight size={14} />
+                              ) : (
+                                <ChevronDown size={14} />
+                              )}
+                              Tasks
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => copyKnowledgeSection(previewDocument, "Tasks", formatKnowledgeList(knowledge.tasks))}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:text-white"
+                            >
+                              <Copy size={12} />
+                              Copy
+                            </button>
+                          </div>
+                          {!isKnowledgeSectionCollapsed(previewDocument.id, "tasks") ? (
+                            <div className="border-t border-slate-800 px-3 py-3">
+                              <ul className="space-y-1 text-sm text-slate-200">
+                                {knowledge.tasks?.map((task) => (
+                                  <li key={`${previewDocument.id}-${task}`}>• {task}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {hasListValues(knowledge.decisions) ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Decisions</p>
+                          <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                            {knowledge.decisions?.map((decision) => (
+                              <li key={`${previewDocument.id}-${decision}`}>• {decision}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {hasListValues(knowledge.dates) ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Dates</p>
+                          <p className="mt-1 text-sm text-slate-200">{knowledge.dates?.join(", ")}</p>
+                        </div>
+                      ) : null}
+
+                      {hasListValues(knowledge.relatedProjectHints) ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Project Hints</p>
+                          <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                            {knowledge.relatedProjectHints?.map((hint) => (
+                              <li key={`${previewDocument.id}-${hint}`}>• {hint}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {hasListValues(knowledge.relatedDocumentHints) ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Related Document Hints</p>
+                          <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                            {knowledge.relatedDocumentHints?.map((hint) => (
+                              <li key={`${previewDocument.id}-${hint}`}>• {hint}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {hasListValues(knowledge.suggestedQuestions) ? (
                         <div>
                           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Suggested Questions</p>
                           <ul className="mt-2 space-y-1 text-sm text-slate-200">
-                            {knowledge.suggestedQuestions.map((question) => (
+                            {knowledge.suggestedQuestions?.map((question) => (
                               <li key={`${previewDocument.id}-${question}`}>• {question}</li>
                             ))}
                           </ul>
+                        </div>
+                      ) : null}
+
+                      {hasListValues(knowledge.contentIdeas) ? (
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Content Ideas</p>
+                          <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                            {knowledge.contentIdeas?.map((idea) => (
+                              <li key={`${previewDocument.id}-${idea}`}>• {idea}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {getKnowledgeInsightValues(knowledge).length > 0 ? (
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          {hasListValues(knowledge.businessInsights?.negotiations) ||
+                          hasListValues(knowledge.businessInsights?.commitments) ||
+                          hasListValues(knowledge.businessInsights?.deadlines) ||
+                          hasListValues(knowledge.businessInsights?.followUpActions) ? (
+                            <div className="rounded-lg bg-slate-950/70 px-3 py-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Business</p>
+                              <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                                {(knowledge.businessInsights?.negotiations || []).map((item) => (
+                                  <li key={`${previewDocument.id}-negotiation-${item}`}>Negotiation: {item}</li>
+                                ))}
+                                {(knowledge.businessInsights?.commitments || []).map((item) => (
+                                  <li key={`${previewDocument.id}-commitment-${item}`}>Commitment: {item}</li>
+                                ))}
+                                {(knowledge.businessInsights?.deadlines || []).map((item) => (
+                                  <li key={`${previewDocument.id}-deadline-${item}`}>Deadline: {item}</li>
+                                ))}
+                                {(knowledge.businessInsights?.followUpActions || []).map((item) => (
+                                  <li key={`${previewDocument.id}-followup-${item}`}>Follow-up: {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          {hasListValues(knowledge.legalInsights?.plaintiff) ||
+                          hasListValues(knowledge.legalInsights?.defendant) ||
+                          hasListValues(knowledge.legalInsights?.lawyers) ||
+                          hasListValues(knowledge.legalInsights?.claims) ||
+                          hasListValues(knowledge.legalInsights?.evidence) ||
+                          hasListValues(knowledge.legalInsights?.courtDates) ? (
+                            <div className="rounded-lg bg-slate-950/70 px-3 py-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Legal</p>
+                              <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                                {(knowledge.legalInsights?.plaintiff || []).map((item) => (
+                                  <li key={`${previewDocument.id}-plaintiff-${item}`}>Plaintiff: {item}</li>
+                                ))}
+                                {(knowledge.legalInsights?.defendant || []).map((item) => (
+                                  <li key={`${previewDocument.id}-defendant-${item}`}>Defendant: {item}</li>
+                                ))}
+                                {(knowledge.legalInsights?.lawyers || []).map((item) => (
+                                  <li key={`${previewDocument.id}-lawyer-${item}`}>Lawyer: {item}</li>
+                                ))}
+                                {(knowledge.legalInsights?.claims || []).map((item) => (
+                                  <li key={`${previewDocument.id}-claim-${item}`}>Claim: {item}</li>
+                                ))}
+                                {(knowledge.legalInsights?.evidence || []).map((item) => (
+                                  <li key={`${previewDocument.id}-evidence-${item}`}>Evidence: {item}</li>
+                                ))}
+                                {(knowledge.legalInsights?.courtDates || []).map((item) => (
+                                  <li key={`${previewDocument.id}-court-${item}`}>Court date: {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          {hasListValues(knowledge.marketingInsights?.sellingPoints) ||
+                          hasListValues(knowledge.marketingInsights?.weaknesses) ||
+                          hasListValues(knowledge.marketingInsights?.buyerObjections) ||
+                          hasListValues(knowledge.marketingInsights?.opportunities) ? (
+                            <div className="rounded-lg bg-slate-950/70 px-3 py-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Marketing</p>
+                              <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                                {(knowledge.marketingInsights?.sellingPoints || []).map((item) => (
+                                  <li key={`${previewDocument.id}-selling-${item}`}>Selling point: {item}</li>
+                                ))}
+                                {(knowledge.marketingInsights?.weaknesses || []).map((item) => (
+                                  <li key={`${previewDocument.id}-weakness-${item}`}>Weakness: {item}</li>
+                                ))}
+                                {(knowledge.marketingInsights?.buyerObjections || []).map((item) => (
+                                  <li key={`${previewDocument.id}-objection-${item}`}>Objection: {item}</li>
+                                ))}
+                                {(knowledge.marketingInsights?.opportunities || []).map((item) => (
+                                  <li key={`${previewDocument.id}-opportunity-${item}`}>Opportunity: {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
 

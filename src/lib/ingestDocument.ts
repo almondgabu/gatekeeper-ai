@@ -14,6 +14,43 @@ const imageMimeTypes = new Set([
 const imageAssetStatus = "image_asset";
 const fallbackSuccessStatus = "completed";
 
+function stripInvalidUtf16Surrogates(input: string) {
+  let sanitized = "";
+
+  for (let index = 0; index < input.length; index++) {
+    const codeUnit = input.charCodeAt(index);
+
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = input.charCodeAt(index + 1);
+
+      if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+        sanitized += input[index] + input[index + 1];
+        index += 1;
+      }
+
+      continue;
+    }
+
+    if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      continue;
+    }
+
+    sanitized += input[index];
+  }
+
+  return sanitized;
+}
+
+function sanitizeExtractedText(input: string) {
+  return stripInvalidUtf16Surrogates(input)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(/\r/g, "")
+    .replace(/\t/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export class IngestDocumentError extends Error {
   status: number;
 
@@ -36,7 +73,11 @@ export async function ingestDocument(documentId: string) {
   }
 
   const storagePath = doc.storage_path ?? doc.filename ?? doc.file_name;
-  const mimeType = (doc.mime_type ?? getMimeType(storagePath)).toLowerCase();
+  const documentMimeType = (doc.mime_type || "").toLowerCase().trim();
+  const mimeType =
+    documentMimeType && documentMimeType !== "application/octet-stream"
+      ? documentMimeType
+      : getMimeType(storagePath).toLowerCase();
 
   if (imageMimeTypes.has(mimeType)) {
     await markImageAssetReady(doc.id, mimeType);
@@ -54,7 +95,7 @@ export async function ingestDocument(documentId: string) {
 
   const arrayBuffer = await (fileData as Blob).arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  const text = await extractText(buffer, mimeType);
+  const text = sanitizeExtractedText(await extractText(buffer, mimeType));
 
   if (!text || text.trim().length === 0) {
     const errorMessage =
