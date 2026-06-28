@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   Clapperboard,
@@ -71,10 +71,12 @@ type GeneratedPackage = {
 
 type InspirationIdea = {
   title: string;
-  angle: string;
-  suggestedContentType: string;
-  whyItMayWork: string;
-  engagementPotential: "Low" | "Medium" | "High";
+  summary: string;
+  bestFormat: "Normal Post" | "Reel / Video";
+  potentialScore: number;
+  difficulty: "Easy" | "Medium" | "Advanced";
+  estimatedProductionTime: string;
+  whyThisIdea: string;
 };
 
 type SavedHistoryItem = {
@@ -99,10 +101,10 @@ type SavedHistoryItem = {
     productionLevel?: string;
     shootingEnvironment?: string;
     equipment?: string[];
-    category?: string;
-    targetAudience?: string;
+    ideaSourceType?: "topic" | "image";
+    ideaTopic?: string;
     ideaGoal?: string;
-    ideaCount?: string;
+    imageName?: string;
   };
 };
 
@@ -157,22 +159,16 @@ const equipmentOptions = [
   "Lavalier Mic",
   "Mirrorless Camera",
 ];
-const inspirationCategories = [
-  "Property Education",
-  "Property Listing",
-  "Investment",
-  "Legal",
-  "Lifestyle",
-  "Drone",
-  "Construction",
-  "Personal Branding",
-  "Funny Sabahan",
-  "General",
+const ideaExplorerGoals = [
+  { value: "build-authority", label: "Build Authority" },
+  { value: "educate", label: "Educate" },
+  { value: "find-buyers", label: "Find Buyers" },
+  { value: "find-sellers", label: "Find Sellers" },
+  { value: "branding", label: "Branding" },
 ];
-const targetAudiences = ["Buyers", "Investors", "Land Owners", "Developers", "Agents", "General Public"];
-const inspirationGoals = ["Education", "Engagement", "Selling", "Lead Generation", "Weekly Facebook Task", "Brand Awareness"];
-const ideaCountOptions = [10, 20, 50];
 const savedHistoryStorageKey = "gatekeeper-content-studio-history";
+const supportedIdeaImageMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+const unsupportedImageFormatMessage = "Unsupported image format. Please upload PNG, JPG, JPEG, or WEBP.";
 
 function normalizeStudioContentType(value: string) {
   const normalized = value.trim().toLowerCase();
@@ -350,6 +346,61 @@ function getSceneDurationBadge(duration: string) {
   return duration.replace("seconds", "sec").replace("second", "sec");
 }
 
+function getGoalLabel(value: string) {
+  return ideaExplorerGoals.find((goalOption) => goalOption.value === value)?.label ?? "Educate";
+}
+
+function mapExplorerGoalToStudioGoal(value: string) {
+  if (value === "find-buyers" || value === "find-sellers") {
+    return "Selling";
+  }
+
+  if (value === "build-authority" || value === "branding") {
+    return "Brand Awareness";
+  }
+
+  return "Education";
+}
+
+function normalizeExplorerGoal(value: string | undefined) {
+  const normalized = (value ?? "").trim().toLowerCase().replace(/\s+/g, "-");
+
+  if (normalized === "build-authority") {
+    return "build-authority";
+  }
+
+  if (normalized === "find-buyers") {
+    return "find-buyers";
+  }
+
+  if (normalized === "find-sellers") {
+    return "find-sellers";
+  }
+
+  if (normalized === "branding" || normalized === "brand-awareness") {
+    return "branding";
+  }
+
+  return "educate";
+}
+
+function mapIdeaBestFormatToContentType(value: InspirationIdea["bestFormat"]) {
+  return value === "Reel / Video" ? "reel-video" : "normal-post";
+}
+
+function getDataUrlMimeType(dataUrl: string | null) {
+  if (!dataUrl) {
+    return "";
+  }
+
+  const match = /^data:([^;,]+)[;,]/i.exec(dataUrl.trim());
+  return match?.[1]?.toLowerCase() ?? "";
+}
+
+function isSupportedIdeaImageDataUrl(dataUrl: string | null) {
+  return supportedIdeaImageMimeTypes.has(getDataUrlMimeType(dataUrl));
+}
+
 export default function ContentStudioPage() {
   const hasAppliedOpportunityPrefill = useRef(false);
   const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("create-content");
@@ -365,15 +416,18 @@ export default function ContentStudioPage() {
   const [productionLevel, setProductionLevel] = useState("Professional");
   const [shootingEnvironment, setShootingEnvironment] = useState("On-Site Property");
   const [equipment, setEquipment] = useState<string[]>(["Phone", "Gimbal"]);
-  const [category, setCategory] = useState("Property Education");
-  const [targetAudience, setTargetAudience] = useState("Buyers");
-  const [ideaGoal, setIdeaGoal] = useState("Education");
-  const [ideaCount, setIdeaCount] = useState("10");
+  const [ideaSourceType, setIdeaSourceType] = useState<"topic" | "image">("topic");
+  const [ideaTopic, setIdeaTopic] = useState("");
+  const [ideaGoal, setIdeaGoal] = useState("educate");
+  const [ideaImageDataUrl, setIdeaImageDataUrl] = useState<string | null>(null);
+  const [ideaImageName, setIdeaImageName] = useState<string | null>(null);
+  const [refreshingIdeaKey, setRefreshingIdeaKey] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [generatedPackage, setGeneratedPackage] = useState<GeneratedPackage | null>(null);
-  const [ideas, setIdeas] = useState<InspirationIdea[]>([]);
+  const [ideaPages, setIdeaPages] = useState<InspirationIdea[][]>([]);
+  const [ideaPageIndex, setIdeaPageIndex] = useState(0);
   const [savedItems, setSavedItems] = useState<SavedHistoryItem[]>([]);
   const [loadedOpportunityTitle, setLoadedOpportunityTitle] = useState<string | null>(null);
 
@@ -405,7 +459,8 @@ export default function ContentStudioPage() {
     hasAppliedOpportunityPrefill.current = true;
     setMode("create-content");
     setGeneratedPackage(null);
-    setIdeas([]);
+    setIdeaPages([]);
+    setIdeaPageIndex(0);
     setCopiedKey(null);
     setError(null);
     setLoadedOpportunityTitle(opportunityTitle || "Opportunity");
@@ -450,13 +505,18 @@ export default function ContentStudioPage() {
   const inspirationPayload = useMemo(
     () => ({
       mode: "inspiration",
-      category,
-      targetAudience,
+      sourceType: ideaSourceType,
+      topic: ideaSourceType === "topic" ? ideaTopic.trim() : "",
+      imageDataUrl: ideaSourceType === "image" ? ideaImageDataUrl : null,
       goal: ideaGoal,
-      ideaCount: Number(ideaCount),
+      ideaCount: 10,
     }),
-    [category, targetAudience, ideaGoal, ideaCount],
+    [ideaSourceType, ideaTopic, ideaImageDataUrl, ideaGoal],
   );
+
+  const visibleIdeas = ideaPages[ideaPageIndex] ?? [];
+  const canGoToPreviousIdeas = ideaPageIndex > 0;
+  const canGoToNextIdeas = ideaPageIndex < ideaPages.length - 1;
 
   async function generateContent() {
     if (!topic.trim()) {
@@ -510,12 +570,29 @@ export default function ContentStudioPage() {
   }
 
   async function generateIdeas() {
+    if (ideaSourceType === "topic" && !ideaTopic.trim()) {
+      setError("Type a topic to explore ideas.");
+      return;
+    }
+
+    if (ideaSourceType === "image" && !ideaImageDataUrl) {
+      setError(ideaImageName ? unsupportedImageFormatMessage : "Upload a screenshot or image to explore ideas.");
+      return;
+    }
+
+    if (ideaSourceType === "image" && !isSupportedIdeaImageDataUrl(ideaImageDataUrl)) {
+      setError(unsupportedImageFormatMessage);
+      return;
+    }
+
     setGenerating(true);
     setError(null);
     setCopiedKey(null);
 
     try {
       const endpoint = "/api/content-studio";
+      let responseStatus: number | null = null;
+      let responseBody: string | null = null;
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -524,22 +601,38 @@ export default function ContentStudioPage() {
         body: JSON.stringify(inspirationPayload),
       });
 
-      const result = await response.json().catch(() => null);
+      responseStatus = response.status;
 
       if (!response.ok) {
-        const serverError = typeof result?.error === "string" ? result.error : null;
-        throw new Error(serverError || `Failed to generate ideas (${response.status}).`);
+        responseBody = await response.text().catch(() => "");
+        const serverMessage = responseBody?.trim() || "No response body.";
+        const error = new Error(`Idea Explorer request failed ${response.status}: ${serverMessage}`) as Error & {
+          responseStatus?: number;
+          responseBody?: string;
+        };
+        error.responseStatus = responseStatus;
+        error.responseBody = responseBody;
+        throw error;
       }
+
+      const result = await response.json().catch(() => null);
 
       if (!result || typeof result !== "object") {
         throw new Error("Invalid API response from /api/content-studio.");
       }
 
-      setIdeas(Array.isArray(result.ideas) ? (result.ideas as InspirationIdea[]) : []);
+      const nextIdeas = Array.isArray(result.ideas) ? (result.ideas as InspirationIdea[]) : [];
+      setIdeaPages(nextIdeas.length > 0 ? [nextIdeas] : []);
+      setIdeaPageIndex(0);
     } catch (generationError: any) {
       console.error("[production-studio] generateIdeas failed", {
         endpoint: "/api/content-studio",
         origin: typeof window === "undefined" ? null : window.location.origin,
+        errorName: generationError?.name,
+        errorMessage: generationError?.message,
+        errorStack: generationError?.stack,
+        responseStatus: generationError?.responseStatus ?? null,
+        responseBody: generationError?.responseBody ?? null,
         inspirationPayload,
         error: generationError,
       });
@@ -553,6 +646,153 @@ export default function ContentStudioPage() {
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function refreshIdea(idea: InspirationIdea) {
+    setRefreshingIdeaKey(idea.title);
+    setError(null);
+
+    try {
+      const endpoint = "/api/content-studio";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...inspirationPayload,
+          mode: "inspiration-refresh",
+          ideaCount: 1,
+          excludeTitles: visibleIdeas.map((entry) => entry.title),
+        }),
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const serverError = typeof result?.error === "string" ? result.error : null;
+        throw new Error(serverError || `Failed to refresh idea (${response.status}).`);
+      }
+
+      const freshIdea = Array.isArray(result?.ideas) ? (result.ideas[0] as InspirationIdea | undefined) : undefined;
+
+      if (!freshIdea) {
+        throw new Error("Could not refresh this idea right now.");
+      }
+
+      setIdeaPages((currentPages) => currentPages.map((page, pageIndex) => {
+        if (pageIndex !== ideaPageIndex) {
+          return page;
+        }
+
+        return page.map((entry) => (entry.title === idea.title ? freshIdea : entry));
+      }));
+    } catch (refreshError: any) {
+      const message = refreshError?.message ?? "Failed to refresh idea.";
+      setError(message);
+    } finally {
+      setRefreshingIdeaKey(null);
+    }
+  }
+
+  async function goToNextIdeas() {
+    if (canGoToNextIdeas) {
+      setIdeaPageIndex((current) => current + 1);
+      return;
+    }
+
+    if (ideaSourceType === "topic" && !ideaTopic.trim()) {
+      setError("Type a topic to explore ideas.");
+      return;
+    }
+
+    if (ideaSourceType === "image" && !ideaImageDataUrl) {
+      setError(ideaImageName ? unsupportedImageFormatMessage : "Upload a screenshot or image to explore ideas.");
+      return;
+    }
+
+    if (ideaSourceType === "image" && !isSupportedIdeaImageDataUrl(ideaImageDataUrl)) {
+      setError(unsupportedImageFormatMessage);
+      return;
+    }
+
+    setGenerating(true);
+    setError(null);
+
+    try {
+      const endpoint = "/api/content-studio";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...inspirationPayload,
+          excludeTitles: ideaPages.flatMap((page) => page.map((idea) => idea.title)),
+        }),
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const serverError = typeof result?.error === "string" ? result.error : null;
+        throw new Error(serverError || `Failed to load more ideas (${response.status}).`);
+      }
+
+      const nextIdeas = Array.isArray(result?.ideas) ? (result.ideas as InspirationIdea[]) : [];
+
+      if (nextIdeas.length === 0) {
+        throw new Error("No more ideas available right now.");
+      }
+
+      setIdeaPages((currentPages) => [...currentPages, nextIdeas]);
+      setIdeaPageIndex((current) => current + 1);
+    } catch (nextError: any) {
+      setError(nextError?.message ?? "Failed to load next ideas.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function goToPreviousIdeas() {
+    if (!canGoToPreviousIdeas) {
+      return;
+    }
+
+    setIdeaPageIndex((current) => current - 1);
+    setError(null);
+  }
+
+  function handleIdeaImageUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const normalizedMimeType = file.type.toLowerCase();
+
+    if (!supportedIdeaImageMimeTypes.has(normalizedMimeType)) {
+      setIdeaImageDataUrl(null);
+      setIdeaImageName(file.name);
+      setError(unsupportedImageFormatMessage);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : null;
+
+      if (!result) {
+        setError("Could not read the uploaded image.");
+        return;
+      }
+
+      setIdeaImageDataUrl(result);
+      setIdeaImageName(file.name);
+      setError(null);
+    };
+    reader.readAsDataURL(file);
   }
 
   async function copyText(text: string, key: string, errorMessage: string) {
@@ -622,14 +862,14 @@ export default function ContentStudioPage() {
         id: crypto.randomUUID(),
         kind: "idea-card" as const,
         title: idea.title,
-        preview: idea.angle,
+        preview: idea.summary,
         savedAt: new Date().toISOString(),
         idea,
         context: {
-          category,
-          targetAudience,
+          ideaSourceType,
+          ideaTopic,
           ideaGoal,
-          ideaCount,
+          imageName: ideaImageName ?? undefined,
         },
       },
       ...savedItems,
@@ -665,19 +905,29 @@ export default function ContentStudioPage() {
 
     if (item.kind === "idea-card" && item.idea) {
       setMode("inspiration");
-      setIdeas([item.idea]);
-      setCategory(item.context?.category ?? "Property Education");
-      setTargetAudience(item.context?.targetAudience ?? "Buyers");
-      setIdeaGoal(item.context?.ideaGoal ?? "Education");
-      setIdeaCount(item.context?.ideaCount ?? "10");
+      setIdeaPages([[item.idea]]);
+      setIdeaPageIndex(0);
+      setIdeaSourceType(item.context?.ideaSourceType ?? "topic");
+      setIdeaTopic(item.context?.ideaTopic ?? "");
+      setIdeaGoal(normalizeExplorerGoal(item.context?.ideaGoal));
       setError(null);
     }
   }
 
   function useIdea(idea: InspirationIdea) {
-    setTopic(`${idea.title}: ${idea.angle}`);
+    setTopic(`${idea.title}: ${getIdeaSummary(idea)}`);
+    setContentType(mapIdeaBestFormatToContentType(idea.bestFormat));
+    setGoal(mapExplorerGoalToStudioGoal(ideaGoal));
     setMode("create-content");
     setError(null);
+  }
+
+  function getIdeaSummary(idea: InspirationIdea | (Record<string, unknown> & InspirationIdea)) {
+    const legacyAngle = typeof (idea as Record<string, unknown>).angle === "string"
+      ? ((idea as Record<string, unknown>).angle as string)
+      : "";
+
+    return idea.summary || legacyAngle;
   }
 
   function toggleEquipment(item: string) {
@@ -707,7 +957,7 @@ export default function ContentStudioPage() {
 
         <div className="mt-6 inline-flex rounded-2xl border border-slate-800 bg-slate-950 p-1">
           <ModeButton label="Production Studio" active={mode === "create-content"} onClick={() => setMode("create-content")} />
-          <ModeButton label="Inspiration" active={mode === "inspiration"} onClick={() => setMode("inspiration")} />
+          <ModeButton label="Idea Explorer" active={mode === "inspiration"} onClick={() => setMode("inspiration")} />
           <ModeButton label="Saved" active={mode === "saved"} onClick={() => setMode("saved")} />
         </div>
 
@@ -800,46 +1050,95 @@ export default function ContentStudioPage() {
             <>
               <div className="flex items-center gap-3">
                 <Lightbulb className="text-yellow-400" size={22} />
-                <h2 className="text-2xl font-semibold">Inspiration Setup</h2>
+                <h2 className="text-2xl font-semibold">Idea Explorer</h2>
               </div>
 
-              <div className="mt-6 grid gap-5 md:grid-cols-2">
-                <SelectField
-                  label="Category"
-                  value={category}
-                  onChange={setCategory}
-                  options={inspirationCategories.map((option) => ({ value: option, label: option }))}
-                />
-                <SelectField
-                  label="Target Audience"
-                  value={targetAudience}
-                  onChange={setTargetAudience}
-                  options={targetAudiences.map((option) => ({ value: option, label: option }))}
-                />
-                <SelectField
-                  label="Goal"
-                  value={ideaGoal}
-                  onChange={setIdeaGoal}
-                  options={inspirationGoals.map((option) => ({ value: option, label: option }))}
-                />
-                <SelectField
-                  label="Number of ideas"
-                  value={ideaCount}
-                  onChange={setIdeaCount}
-                  options={ideaCountOptions.map((option) => ({ value: String(option), label: String(option) }))}
-                />
+              <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Step 1</p>
+                <p className="mt-2 text-lg font-semibold text-white">Choose inspiration source</p>
+
+                <div className="mt-4 inline-flex rounded-xl border border-slate-700 bg-slate-900/70 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setIdeaSourceType("topic")}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                      ideaSourceType === "topic" ? "bg-yellow-500 text-slate-950" : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    Type a topic
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIdeaSourceType("image")}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                      ideaSourceType === "image" ? "bg-yellow-500 text-slate-950" : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    Upload screenshot/image
+                  </button>
+                </div>
+
+                {ideaSourceType === "topic" ? (
+                  <div className="mt-4">
+                    <label className="mb-2 block text-sm font-medium text-slate-200">What should we explore?</label>
+                    <textarea
+                      value={ideaTopic}
+                      onChange={(event) => setIdeaTopic(event.target.value)}
+                      rows={6}
+                      placeholder="Example: First-time buyers asking how to safely evaluate land listings in Sabah"
+                      className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-4 text-base text-white placeholder:text-slate-500"
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    <label className="block text-sm font-medium text-slate-200">Upload a screenshot or image</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleIdeaImageUpload}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200 file:mr-4 file:rounded-lg file:border-0 file:bg-yellow-500 file:px-3 file:py-2 file:font-semibold file:text-slate-950"
+                    />
+                    {ideaImageName ? (
+                      <p className="text-sm text-slate-300">Selected: {ideaImageName}</p>
+                    ) : null}
+                    {ideaImageDataUrl ? (
+                      <img src={ideaImageDataUrl} alt="Uploaded inspiration" className="max-h-56 w-full rounded-2xl border border-slate-800 object-cover" />
+                    ) : null}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Step 2</p>
+                <p className="mt-2 text-lg font-semibold text-white">Choose goal</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {ideaExplorerGoals.map((goalOption) => (
+                    <button
+                      key={goalOption.value}
+                      type="button"
+                      onClick={() => setIdeaGoal(goalOption.value)}
+                      className={`rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                        ideaGoal === goalOption.value
+                          ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-100"
+                          : "border-slate-700 bg-slate-900/60 text-slate-200 hover:border-yellow-500/30"
+                      }`}
+                    >
+                      {goalOption.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <InfoCard
                   icon={<Lightbulb size={18} className="text-yellow-400" />}
-                  title="Idea Scope"
-                  body="Ideas stay at concept level only. No full captions, scripts, CTAs, or hashtag packages are generated here."
+                  title="Step 3"
+                  body="Click Explore Ideas to get 10 easy-to-scan cards."
                 />
                 <InfoCard
                   icon={<Megaphone size={18} className="text-yellow-400" />}
-                  title="Idea Priorities"
-                  body="Ideas are optimized for comments, shares, saves, inquiries, and Sabah land education angles where relevant."
+                  title="Then"
+                  body="Use Explore on any card to fill Production Studio instantly."
                 />
               </div>
             </>
@@ -905,15 +1204,35 @@ export default function ContentStudioPage() {
                 </button>
               </>
             ) : mode === "inspiration" ? (
-              <button
-                type="button"
-                onClick={generateIdeas}
-                disabled={generating}
-                className="inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-5 py-3 font-semibold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Sparkles size={18} />
-                {generating ? "Generating..." : "Generate Ideas"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={generateIdeas}
+                  disabled={generating}
+                  className="inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-5 py-3 font-semibold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Sparkles size={18} />
+                  {generating ? "Exploring..." : "Explore Ideas"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={goToPreviousIdeas}
+                  disabled={!canGoToPreviousIdeas || generating}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Previous 10
+                </button>
+
+                <button
+                  type="button"
+                  onClick={goToNextIdeas}
+                  disabled={generating}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {generating ? "Loading..." : "Next 10"}
+                </button>
+              </>
             ) : (
               <button
                 type="button"
@@ -939,7 +1258,7 @@ export default function ContentStudioPage() {
                   <FolderClock className="text-yellow-400" size={22} />
                 )}
                 <h2 className="text-2xl font-semibold">
-                  {mode === "create-content" ? "Production Package" : mode === "inspiration" ? "Idea Cards" : "Saved Items"}
+                  {mode === "create-content" ? "Production Package" : mode === "inspiration" ? "Idea Explorer" : "Saved Items"}
                 </h2>
               </div>
               {mode === "create-content" ? (
@@ -953,7 +1272,7 @@ export default function ContentStudioPage() {
                 {mode === "create-content"
                   ? "Output is structured for direct copy, Google Flow prompt generation, and production handoff."
                   : mode === "inspiration"
-                    ? "Generate concept-level ideas first, then push the best one back into Production Studio."
+                    ? "Simple flow: add topic or screenshot, choose a goal, explore ideas, then open one in Production Studio."
                     : "Review saved idea cards and generated production packages stored in this browser."}
               </p>
             </div>
@@ -1229,52 +1548,70 @@ export default function ContentStudioPage() {
               </div>
             )
           ) : mode === "inspiration" ? (
-            ideas.length === 0 ? (
+            visibleIdeas.length === 0 ? (
               <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-                Choose a category, audience, and goal, then generate idea cards.
+                Follow steps 1 and 2, then click Explore Ideas to get your first 10 cards.
               </div>
             ) : (
-              <div className="mt-6 grid gap-4">
-                {ideas.map((idea) => (
-                  <div key={`${idea.title}-${idea.angle}`} className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+              <div className="mt-6 space-y-4">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm text-slate-300">
+                  Showing ideas {ideaPageIndex * 10 + 1}-{ideaPageIndex * 10 + visibleIdeas.length} | Goal: {getGoalLabel(ideaGoal)}
+                </div>
+
+                <div className="grid gap-4">
+                {visibleIdeas.map((idea) => (
+                  <div key={`${idea.title}-${idea.summary}`} className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="max-w-3xl">
                         <h3 className="text-xl font-semibold text-white">{idea.title}</h3>
-                        <p className="mt-3 text-sm leading-7 text-slate-300">{idea.angle}</p>
+                        <p className="mt-3 text-sm leading-7 text-slate-300">{getIdeaSummary(idea)}</p>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => useIdea(idea)}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-yellow-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-yellow-400"
-                      >
-                        <Sparkles size={16} />
-                        Use Idea
-                      </button>
-                    </div>
+                      <div className="flex shrink-0 flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => useIdea(idea)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-yellow-400"
+                        >
+                          <Sparkles size={16} />
+                          Explore idea
+                        </button>
 
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => saveIdea(idea)}
-                        className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
-                      >
-                        <FolderClock size={16} />
-                        Save Idea
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => saveIdea(idea)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+                        >
+                          <FolderClock size={16} />
+                          Save idea
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => refreshIdea(idea)}
+                          disabled={refreshingIdeaKey === idea.title}
+                          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <RefreshCw size={16} className={refreshingIdeaKey === idea.title ? "animate-spin" : undefined} />
+                          {refreshingIdeaKey === idea.title ? "Refreshing..." : "Refresh"}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <IdeaField label="Suggested content type" value={idea.suggestedContentType} />
-                      <IdeaField label="Engagement potential" value={idea.engagementPotential} />
+                      <IdeaField label="Best format" value={idea.bestFormat || "Normal Post"} />
+                      <IdeaField label="Potential score" value={`${idea.potentialScore ?? 70}/100`} />
+                      <IdeaField label="Difficulty" value={idea.difficulty || "Medium"} />
+                      <IdeaField label="Estimated production time" value={idea.estimatedProductionTime || "Standard"} />
                     </div>
 
                     <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Why it may work</p>
-                      <p className="mt-3 text-sm leading-7 text-slate-300">{idea.whyItMayWork}</p>
+                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Why this idea</p>
+                      <p className="mt-3 text-sm leading-7 text-slate-300">{idea.whyThisIdea || "Strong fit for your selected goal and source."}</p>
                     </div>
                   </div>
                 ))}
+                </div>
               </div>
             )
           ) : savedItems.length === 0 ? (

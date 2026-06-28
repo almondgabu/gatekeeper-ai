@@ -7,7 +7,7 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const allowedModes = new Set(["create-content", "inspiration"]);
+const allowedModes = new Set(["create-content", "inspiration", "inspiration-refresh"]);
 const allowedContentTypes = new Set([
   "normal-post",
   "reel-video",
@@ -74,27 +74,17 @@ const allowedGoals = new Set([
   "brand-awareness",
   "weekly-facebook-task",
 ]);
-const allowedInspirationCategories = new Set([
-  "property-education",
-  "property-listing",
-  "investment",
-  "legal",
-  "lifestyle",
-  "drone",
-  "construction",
-  "personal-branding",
-  "funny-sabahan",
-  "general",
+const allowedInspirationSourceTypes = new Set(["topic", "image"]);
+const allowedIdeaExplorerGoals = new Set([
+  "build-authority",
+  "educate",
+  "find-buyers",
+  "find-sellers",
+  "branding",
 ]);
-const allowedAudiences = new Set([
-  "buyers",
-  "investors",
-  "land-owners",
-  "developers",
-  "agents",
-  "general-public",
-]);
-const allowedIdeaCounts = new Set([10, 20, 50]);
+const allowedIdeaCounts = new Set([1, 10]);
+const supportedIdeaImageMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+const unsupportedImageFormatMessage = "Unsupported image format. Please upload PNG, JPG, JPEG, or WEBP.";
 
 type StudioResponse = {
   title: string;
@@ -142,10 +132,12 @@ type StudioResponse = {
 
 type InspirationIdea = {
   title: string;
-  angle: string;
-  suggestedContentType: string;
-  whyItMayWork: string;
-  engagementPotential: "Low" | "Medium" | "High";
+  summary: string;
+  bestFormat: "Normal Post" | "Reel / Video";
+  potentialScore: number;
+  difficulty: "Easy" | "Medium" | "Advanced";
+  estimatedProductionTime: string;
+  whyThisIdea: string;
 };
 
 type InspirationResponse = {
@@ -177,6 +169,34 @@ function formatTitleCase(value: string) {
     .split("-")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function shouldApplySabahRepresentationRules(topic: string) {
+  const lowered = topic.toLowerCase();
+
+  const sabahKeywords = [
+    "sabah",
+    "sabah land",
+    "sabah property",
+    "village",
+    "villages",
+    "buyer",
+    "buyers",
+    "owner",
+    "owners",
+    "ren",
+    "real estate negotiator",
+    "agriculture",
+    "tourism",
+    "local community",
+  ];
+
+  return sabahKeywords.some((keyword) => lowered.includes(keyword));
+}
+
+function getDataUrlMimeType(dataUrl: string) {
+  const match = /^data:([^;,]+)[;,]/i.exec(dataUrl.trim());
+  return match?.[1]?.toLowerCase() ?? "";
 }
 
 function parseJsonResponse(value: string) {
@@ -411,22 +431,32 @@ function normalizeStudioResponse(value: unknown): StudioResponse {
   };
 }
 
-function normalizeEngagementPotential(value: string) {
+function normalizeDifficulty(value: string) {
   const normalized = value.toLowerCase();
 
-  if (normalized === "low") {
-    return "Low";
+  if (normalized === "easy") {
+    return "Easy";
   }
 
   if (normalized === "medium") {
     return "Medium";
   }
 
-  if (normalized === "high") {
-    return "High";
+  if (normalized === "advanced") {
+    return "Advanced";
   }
 
-  throw new Error("Invalid engagementPotential value");
+  throw new Error("Invalid difficulty value");
+}
+
+function normalizeBestFormat(value: string) {
+  const normalized = value.toLowerCase();
+
+  if (normalized.includes("reel") || normalized.includes("video")) {
+    return "Reel / Video" as const;
+  }
+
+  return "Normal Post" as const;
 }
 
 function normalizeInspirationResponse(value: unknown): InspirationResponse {
@@ -444,21 +474,35 @@ function normalizeInspirationResponse(value: unknown): InspirationResponse {
 
           const record = idea as Record<string, unknown>;
           const title = normalizeText(record.title);
-          const angle = normalizeText(record.angle);
-          const suggestedContentType = normalizeText(record.suggestedContentType);
-          const whyItMayWork = normalizeText(record.whyItMayWork);
-          const rawEngagementPotential = normalizeText(record.engagementPotential);
+          const summary = normalizeText(record.summary);
+          const rawBestFormat = normalizeText(record.bestFormat);
+          const potentialScore = Number(record.potentialScore);
+          const rawDifficulty = normalizeText(record.difficulty);
+          const estimatedProductionTime = normalizeText(record.estimatedProductionTime);
+          const whyThisIdea = normalizeText(record.whyThisIdea);
 
-          if (!title || !angle || !suggestedContentType || !whyItMayWork || !rawEngagementPotential) {
+          if (
+            !title ||
+            !summary ||
+            !rawBestFormat ||
+            !Number.isFinite(potentialScore) ||
+            !rawDifficulty ||
+            !estimatedProductionTime ||
+            !whyThisIdea
+          ) {
             return null;
           }
 
+          const boundedScore = Math.max(1, Math.min(100, Math.round(potentialScore)));
+
           return {
             title,
-            angle,
-            suggestedContentType,
-            whyItMayWork,
-            engagementPotential: normalizeEngagementPotential(rawEngagementPotential),
+            summary,
+            bestFormat: normalizeBestFormat(rawBestFormat),
+            potentialScore: boundedScore,
+            difficulty: normalizeDifficulty(rawDifficulty),
+            estimatedProductionTime,
+            whyThisIdea,
           };
         })
         .filter(Boolean) as InspirationIdea[]
@@ -480,21 +524,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
     }
 
-    if (mode === "inspiration") {
-      const category = normalizeText(body?.category).toLowerCase().replace(/\s+/g, "-");
-      const targetAudience = normalizeText(body?.targetAudience).toLowerCase().replace(/\s+/g, "-");
+    if (mode === "inspiration" || mode === "inspiration-refresh") {
+      const sourceType = normalizeText(body?.sourceType).toLowerCase();
       const goal = normalizeText(body?.goal).toLowerCase().replace(/\s+/g, "-");
-      const ideaCount = Number(body?.ideaCount);
+      const ideaCount = Number(body?.ideaCount ?? (mode === "inspiration-refresh" ? 1 : 10));
+      const topic = normalizeText(body?.topic);
+      const imageDataUrl = normalizeText(body?.imageDataUrl);
+      const excludeTitles = Array.isArray(body?.excludeTitles)
+        ? body.excludeTitles.map((value: unknown) => normalizeText(value)).filter(Boolean)
+        : [];
 
-      if (!allowedInspirationCategories.has(category)) {
-        return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+      if (!allowedInspirationSourceTypes.has(sourceType)) {
+        return NextResponse.json({ error: "Invalid sourceType" }, { status: 400 });
       }
 
-      if (!allowedAudiences.has(targetAudience)) {
-        return NextResponse.json({ error: "Invalid targetAudience" }, { status: 400 });
-      }
-
-      if (!allowedGoals.has(goal)) {
+      if (!allowedIdeaExplorerGoals.has(goal)) {
         return NextResponse.json({ error: "Invalid goal" }, { status: 400 });
       }
 
@@ -502,44 +546,72 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Invalid ideaCount" }, { status: 400 });
       }
 
-      const response = await client.responses.create({
-        model: "gpt-5-mini",
-        input: `
-You are Gatekeeper AI Production Studio for Borneo Land Gatekeeper.
+      if (sourceType === "topic" && !topic) {
+        return NextResponse.json({ error: "Topic is required for topic source" }, { status: 400 });
+      }
 
-Generate inspiration ideas only. Do not generate a full post, caption, script, CTA, or hashtag package.
+      if (sourceType === "image") {
+        const mimeType = getDataUrlMimeType(imageDataUrl);
 
-Brand and idea rules:
-- Ideas must fit Borneo Land Gatekeeper.
-- Ideas should be suitable for Facebook posts, reels, and property education.
+        if (!supportedIdeaImageMimeTypes.has(mimeType)) {
+          return NextResponse.json({ error: unsupportedImageFormatMessage }, { status: 400 });
+        }
+      }
+
+      const exclusionRule = excludeTitles.length > 0
+        ? `Avoid repeating these previous idea titles: ${excludeTitles.join(" | ")}`
+        : "";
+      const sourceSummary = sourceType === "topic"
+        ? `Topic from user: ${topic}`
+        : "User uploaded a screenshot/image as the inspiration source. Infer practical context only from visible clues.";
+
+      const prompt = `
+You are Gatekeeper AI Idea Explorer for Borneo Land Gatekeeper.
+
+Generate idea cards only. Keep language simple and practical for a non-technical user.
+
+Rules:
 - Do not invent property facts, pricing, dimensions, approvals, legal claims, amenities, distances, or construction details.
-- Include Sabah, real estate, or land education angles where relevant.
-- Prioritize ideas that encourage comments, shares, saves, or inquiries.
-- Keep each idea practical, specific, and usable for future content generation.
+- Keep ideas relevant to Sabah land, buyer/seller education, authority building, or branding.
+- Each idea must be fast to understand.
+- Return exactly ${ideaCount} ideas.
+- Do not number titles.
+- ${exclusionRule || "Do not produce near-duplicate ideas in the same batch."}
 
-Output requirements:
-- Return exactly one JSON object.
-- The JSON must match this shape:
+Return exactly one JSON object in this shape:
 {
   "ideas": [
     {
       "title": "...",
-      "angle": "...",
-      "suggestedContentType": "Normal Post | Reel / Video",
-      "whyItMayWork": "...",
-      "engagementPotential": "Low | Medium | High"
+      "summary": "1-2 sentences, plain language",
+      "bestFormat": "Normal Post | Reel / Video",
+      "potentialScore": 1,
+      "difficulty": "Easy | Medium | Advanced",
+      "estimatedProductionTime": "...",
+      "whyThisIdea": "..."
     }
   ]
 }
-- Return exactly ${ideaCount} ideas.
-- Do not include numbering in the title.
 
-Request:
-- Category: ${category}
-- Target Audience: ${targetAudience}
+Context:
 - Goal: ${goal}
-- Number of Ideas: ${ideaCount}
-`,
+- Source Type: ${sourceType}
+- ${sourceSummary}
+`;
+
+      const response = await client.responses.create({
+        model: "gpt-5-mini",
+        input: sourceType === "image"
+          ? [
+              {
+                role: "user",
+                content: [
+                  { type: "input_text", text: prompt },
+                  { type: "input_image", image_url: imageDataUrl, detail: "auto" },
+                ],
+              },
+            ]
+          : prompt,
       });
 
       return NextResponse.json(normalizeInspirationResponse(parseJsonResponse(response.output_text)));
@@ -619,6 +691,25 @@ Request:
 
     const sceneCount = contentType === "reel-video" && duration ? Math.ceil(duration / 8) : 1;
     const equipmentList = equipment.length > 0 ? equipment.map(formatTitleCase).join(", ") : "Phone, Gimbal";
+    const sabahRepresentationRules = shouldApplySabahRepresentationRules(topic)
+      ? `
+Sabah local representation rules (apply for all visuals, scenes, and prompts):
+- Every imagePrompt and videoPrompt must explicitly describe realistic local Sabahan/Malaysian people and authentic Sabah environment.
+- Actors/characters should be local Sabahan/Malaysian-looking unless user specifies otherwise.
+- Use natural local clothing and styling: casual polo shirt, fieldwork shirt, cap, modest everyday clothing, and village/rural/town context when appropriate.
+- Avoid generic Western-looking actors for Sabah local scenes.
+- Keep representation respectful, realistic, and professional.
+- If dialogue style is selected and language allows, characters may use light Sabahan Malay/local conversational tone.
+- Do not stereotype or exaggerate local identity.
+- Maintain character consistency across scenes: same face, same clothing, same age range, same body type, and same role.
+- Role guidance when relevant:
+  - Landowner: local Sabahan landowner, mature, trustworthy, practical.
+  - Buyer: Malaysian/Sabahan buyer, professional or family-oriented depending on context.
+  - REN/agent: local Malaysian real estate negotiator, professional fieldwork appearance.
+  - Villagers: realistic local community members, respectful and natural.
+- Use realistic local Sabahan/Malaysian people and environment. Avoid generic Western stock-footage appearance. Keep scenes natural, respectful, and authentic to Sabah.
+`
+      : "";
 
     const response = await client.responses.create({
       model: "gpt-5-mini",
@@ -702,6 +793,7 @@ Additional rules:
 - Director notes should guide framing, pacing, and story emphasis.
 - If language is Both, blend both naturally and sparingly.
 - If tone is Sabahan, reflect that flavor lightly without becoming caricatured.
+${sabahRepresentationRules}
 
 Request:
 - Content Type: ${contentType === "reel-video" ? "Reel / Video" : "Normal Post"}
@@ -722,13 +814,38 @@ Request:
 
     return NextResponse.json(normalizeStudioResponse(parseJsonResponse(response.output_text)));
   } catch (error: any) {
+    const errorMessage = typeof error?.message === "string" ? error.message : String(error);
+    const errorStatus = typeof error?.status === "number"
+      ? error.status
+      : typeof error?.statusCode === "number"
+        ? error.statusCode
+        : 500;
+    const errorDetails =
+      typeof error?.error === "object"
+        ? error.error
+        : typeof error?.response?.data === "object"
+          ? error.response.data
+          : null;
+
     console.error("[api/content-studio] POST failed", {
-      message: error?.message,
-      stack: error?.stack,
+      errorName: error?.name,
+      errorMessage,
+      errorStatus,
+      errorCode: error?.code,
+      errorType: error?.type,
+      errorParam: error?.param,
+      errorStack: error?.stack,
+      errorDetails,
     });
+
     return NextResponse.json(
-      { error: error?.message ?? String(error) },
-      { status: 500 },
+      {
+        error: errorMessage,
+        errorName: error?.name ?? "Error",
+        status: errorStatus,
+        details: errorDetails,
+      },
+      { status: errorStatus },
     );
   }
 }
