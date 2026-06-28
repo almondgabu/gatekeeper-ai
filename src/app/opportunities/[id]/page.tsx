@@ -274,7 +274,7 @@ export default function OpportunityDetailPage({ params }: { params: Promise<{ id
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
               >
                 <Clapperboard size={18} />
-                Generate Marketing Package
+                Open Production Studio
               </Link>
 
               {opportunity.converted_project_id ? (

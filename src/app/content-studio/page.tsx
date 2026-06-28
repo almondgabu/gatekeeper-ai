@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ClipboardList,
   Clapperboard,
   Copy,
   FolderClock,
@@ -13,6 +14,7 @@ import {
   RefreshCw,
   Sparkles,
   Target,
+  Video,
 } from "lucide-react";
 
 type ContentTypeOption = {
@@ -27,10 +29,43 @@ type PackageSection = {
 
 type GeneratedPackage = {
   title: string;
+  outputMode?: string;
   contentType: string;
   platform: string;
   aspectRatio: string;
-  sections: PackageSection[];
+  sections?: PackageSection[];
+  creativeBrief?: {
+    objective: string;
+    targetAudience: string;
+    keyMessage: string;
+    storyStyle: string;
+    presentationStyle: string;
+    estimatedProductionTime: string;
+  };
+  visualDirection?: {
+    mood: string;
+    lighting: string;
+    colourPalette: string;
+    cameraStyle: string;
+    atmosphere: string;
+  };
+  productionChecklist?: string[];
+  storyboard?: Array<{
+    sceneNumber: number;
+    summary: string;
+  }>;
+  scenes?: Array<{
+    sceneNumber: number;
+    purpose: string;
+    directorNotes: string;
+    estimatedDuration: string;
+    thumbnailPlaceholder: string;
+    imagePrompt: string;
+    videoPrompt: string;
+  }>;
+  caption?: string;
+  cta?: string;
+  hashtags?: string;
 };
 
 type InspirationIdea = {
@@ -57,6 +92,12 @@ type SavedHistoryItem = {
     tone?: string;
     language?: string;
     goal?: string;
+    storyStyle?: string;
+    presentationStyle?: string;
+    duration?: string;
+    productionLevel?: string;
+    shootingEnvironment?: string;
+    equipment?: string[];
     category?: string;
     targetAudience?: string;
     ideaGoal?: string;
@@ -65,14 +106,8 @@ type SavedHistoryItem = {
 };
 
 const contentTypes: ContentTypeOption[] = [
-  { value: "standard-post", label: "Standard Post" },
-  { value: "reel-short-video", label: "Reel / Short Video" },
-  { value: "property-listing", label: "Property Listing" },
-  { value: "educational-content", label: "Educational Content" },
-  { value: "drone-showcase", label: "Drone Showcase" },
-  { value: "construction-progress", label: "Construction Progress" },
-  { value: "storytelling", label: "Storytelling" },
-  { value: "custom", label: "Custom" },
+  { value: "normal-post", label: "Normal Post" },
+  { value: "reel-video", label: "Reel / Video" },
 ];
 
 const platforms = [
@@ -83,10 +118,44 @@ const platforms = [
   { value: "youtube-shorts", label: "YouTube Shorts" },
 ];
 
-const aspectRatios = ["4:5", "9:16", "1:1", "16:9"];
-const tones = ["Professional", "Sabahan", "Educational", "Investor", "Funny", "Storytelling"];
 const languages = ["English", "Sabahan", "Both"];
 const goals = ["Engagement", "Education", "Selling", "Brand Awareness", "Weekly Facebook Task"];
+const storyStyles = [
+  "Educational",
+  "Documentary",
+  "Case Study",
+  "Property Tour",
+  "Investor Pitch",
+  "Comedy",
+  "Lifestyle",
+  "News Report",
+];
+const presentationStyles = [
+  "Narration",
+  "Dialogue",
+  "Host Presentation",
+  "Silent Cinematic",
+  "Voice-over",
+  "Interview",
+];
+const durationOptions = [8, 16, 24, 32, 40, 48, 56, 64];
+const productionLevels = ["Quick", "Professional", "Premium"];
+const shootingEnvironments = [
+  "On-Site Property",
+  "Outdoor Location",
+  "Interior Space",
+  "Office / Studio",
+  "Mixed Environment",
+];
+const equipmentOptions = [
+  "Phone",
+  "Drone",
+  "Gimbal",
+  "Tripod",
+  "ND Filter",
+  "Lavalier Mic",
+  "Mirrorless Camera",
+];
 const inspirationCategories = [
   "Property Education",
   "Property Listing",
@@ -104,31 +173,144 @@ const inspirationGoals = ["Education", "Engagement", "Selling", "Lead Generation
 const ideaCountOptions = [10, 20, 50];
 const savedHistoryStorageKey = "gatekeeper-content-studio-history";
 
-const contentTypeAspectRatioDefaults: Record<string, string> = {
-  "standard-post": "4:5",
-  "reel-short-video": "9:16",
-  "drone-showcase": "9:16",
-  "construction-progress": "9:16",
-  "property-listing": "4:5",
-};
+function normalizeStudioContentType(value: string) {
+  const normalized = value.trim().toLowerCase();
 
-function getDefaultAspectRatio(contentType: string) {
-  return contentTypeAspectRatioDefaults[contentType] ?? "4:5";
+  if (["reel-video", "reel-short-video", "drone-showcase", "construction-progress"].includes(normalized)) {
+    return "reel-video";
+  }
+
+  return "normal-post";
+}
+
+function getAspectRatioForContentType(contentType: string) {
+  return contentType === "reel-video" ? "9:16" : "4:5";
+}
+
+function hasProductionStudioStructure(contentPackage: GeneratedPackage) {
+  return Boolean(
+    contentPackage.creativeBrief &&
+    contentPackage.visualDirection &&
+    contentPackage.productionChecklist &&
+    contentPackage.storyboard &&
+    contentPackage.scenes,
+  );
+}
+
+function formatCreativeBriefForCopy(contentPackage: GeneratedPackage) {
+  if (!contentPackage.creativeBrief) {
+    return "";
+  }
+
+  const { creativeBrief } = contentPackage;
+
+  return [
+    "Creative Brief",
+    `Objective: ${creativeBrief.objective}`,
+    `Target Audience: ${creativeBrief.targetAudience}`,
+    `Key Message: ${creativeBrief.keyMessage}`,
+    `Story Style: ${creativeBrief.storyStyle}`,
+    `Presentation Style: ${creativeBrief.presentationStyle}`,
+    `Estimated Production Time: ${creativeBrief.estimatedProductionTime}`,
+  ].join("\n");
+}
+
+function formatVisualDirectionForCopy(contentPackage: GeneratedPackage) {
+  if (!contentPackage.visualDirection) {
+    return "";
+  }
+
+  const { visualDirection } = contentPackage;
+
+  return [
+    "Visual Direction",
+    `Mood: ${visualDirection.mood}`,
+    `Lighting: ${visualDirection.lighting}`,
+    `Colour Palette: ${visualDirection.colourPalette}`,
+    `Camera Style: ${visualDirection.cameraStyle}`,
+    `Atmosphere: ${visualDirection.atmosphere}`,
+  ].join("\n");
+}
+
+function formatProductionChecklistForCopy(contentPackage: GeneratedPackage) {
+  return [
+    "Production Checklist",
+    ...(contentPackage.productionChecklist ?? []).map((item) => `- ${item}`),
+  ].join("\n");
+}
+
+function formatStoryboardForCopy(contentPackage: GeneratedPackage) {
+  return [
+    "Storyboard",
+    ...(contentPackage.storyboard ?? []).map((scene) => `Scene ${scene.sceneNumber}: ${scene.summary}`),
+  ].join("\n");
+}
+
+function formatSceneForCopy(scene: NonNullable<GeneratedPackage["scenes"]>[number]) {
+  return [
+    `Scene ${scene.sceneNumber}`,
+    `Purpose: ${scene.purpose}`,
+    `Director Notes: ${scene.directorNotes}`,
+    `Estimated Duration: ${scene.estimatedDuration}`,
+    `Thumbnail Placeholder: ${scene.thumbnailPlaceholder}`,
+    "",
+    "Image Prompt",
+    scene.imagePrompt,
+    "",
+    "Video Prompt",
+    scene.videoPrompt,
+  ].join("\n");
 }
 
 function formatPackageForCopy(contentPackage: GeneratedPackage) {
+  if (!hasProductionStudioStructure(contentPackage)) {
+    return [
+      contentPackage.title,
+      `Content Type: ${contentPackage.contentType}`,
+      `Platform: ${contentPackage.platform}`,
+      `Aspect Ratio: ${contentPackage.aspectRatio}`,
+      "",
+      ...(contentPackage.sections ?? []).flatMap((section) => [section.label, section.value, ""]),
+    ].join("\n");
+  }
+
   return [
     contentPackage.title,
+    `Output Mode: ${contentPackage.outputMode ?? "Production Package"}`,
     `Content Type: ${contentPackage.contentType}`,
     `Platform: ${contentPackage.platform}`,
     `Aspect Ratio: ${contentPackage.aspectRatio}`,
     "",
-    ...contentPackage.sections.flatMap((section) => [section.label, section.value, ""]),
+    formatCreativeBriefForCopy(contentPackage),
+    "",
+    formatVisualDirectionForCopy(contentPackage),
+    "",
+    formatProductionChecklistForCopy(contentPackage),
+    "",
+    formatStoryboardForCopy(contentPackage),
+    "",
+    ...(contentPackage.scenes ?? []).flatMap((scene) => [formatSceneForCopy(scene), ""]),
+    "Caption",
+    contentPackage.caption ?? "",
+    "",
+    "CTA",
+    contentPackage.cta ?? "",
+    "",
+    "Hashtags",
+    contentPackage.hashtags ?? "",
   ].join("\n");
 }
 
 function getPackagePreview(contentPackage: GeneratedPackage) {
-  return contentPackage.sections[0]?.value ?? contentPackage.title;
+  if (contentPackage.creativeBrief?.objective) {
+    return contentPackage.creativeBrief.objective;
+  }
+
+  if (contentPackage.caption) {
+    return contentPackage.caption;
+  }
+
+  return contentPackage.sections?.[0]?.value ?? contentPackage.title;
 }
 
 function readSavedHistory() {
@@ -166,31 +348,29 @@ function formatSavedDate(value: string) {
 export default function ContentStudioPage() {
   const hasAppliedOpportunityPrefill = useRef(false);
   const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("create-content");
-  const [contentType, setContentType] = useState("standard-post");
+  const [contentType, setContentType] = useState("normal-post");
   const [platform, setPlatform] = useState("facebook");
-  const [aspectRatio, setAspectRatio] = useState(getDefaultAspectRatio("standard-post"));
-  const [aspectRatioLocked, setAspectRatioLocked] = useState(false);
   const [topic, setTopic] = useState("");
   const [tone, setTone] = useState("Professional");
   const [language, setLanguage] = useState("English");
   const [goal, setGoal] = useState("Engagement");
+  const [storyStyle, setStoryStyle] = useState("Educational");
+  const [presentationStyle, setPresentationStyle] = useState("Narration");
+  const [duration, setDuration] = useState("40");
+  const [productionLevel, setProductionLevel] = useState("Professional");
+  const [shootingEnvironment, setShootingEnvironment] = useState("On-Site Property");
+  const [equipment, setEquipment] = useState<string[]>(["Phone", "Gimbal"]);
   const [category, setCategory] = useState("Property Education");
   const [targetAudience, setTargetAudience] = useState("Buyers");
   const [ideaGoal, setIdeaGoal] = useState("Education");
   const [ideaCount, setIdeaCount] = useState("10");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [generatedPackage, setGeneratedPackage] = useState<GeneratedPackage | null>(null);
   const [ideas, setIdeas] = useState<InspirationIdea[]>([]);
   const [savedItems, setSavedItems] = useState<SavedHistoryItem[]>([]);
   const [loadedOpportunityTitle, setLoadedOpportunityTitle] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!aspectRatioLocked) {
-      setAspectRatio(getDefaultAspectRatio(contentType));
-    }
-  }, [contentType, aspectRatioLocked]);
 
   useEffect(() => {
     setSavedItems(readSavedHistory());
@@ -221,7 +401,7 @@ export default function ContentStudioPage() {
     setMode("create-content");
     setGeneratedPackage(null);
     setIdeas([]);
-    setCopied(false);
+    setCopiedKey(null);
     setError(null);
     setLoadedOpportunityTitle(opportunityTitle || "Opportunity");
 
@@ -230,8 +410,7 @@ export default function ContentStudioPage() {
     }
 
     if (contentTypeValue) {
-      setContentType(contentTypeValue);
-      setAspectRatioLocked(false);
+      setContentType(normalizeStudioContentType(contentTypeValue));
     }
 
     if (goalValue) {
@@ -248,13 +427,19 @@ export default function ContentStudioPage() {
       mode: "create-content",
       contentType,
       platform,
-      aspectRatio,
+      aspectRatio: getAspectRatioForContentType(contentType),
       topic,
       tone,
       language,
       goal,
+      storyStyle,
+      presentationStyle,
+      duration: contentType === "reel-video" ? Number(duration) : null,
+      productionLevel,
+      shootingEnvironment,
+      equipment,
     }),
-    [contentType, platform, aspectRatio, topic, tone, language, goal]
+    [contentType, platform, topic, tone, language, goal, storyStyle, presentationStyle, duration, productionLevel, shootingEnvironment, equipment],
   );
 
   const inspirationPayload = useMemo(
@@ -265,7 +450,7 @@ export default function ContentStudioPage() {
       goal: ideaGoal,
       ideaCount: Number(ideaCount),
     }),
-    [category, targetAudience, ideaGoal, ideaCount]
+    [category, targetAudience, ideaGoal, ideaCount],
   );
 
   async function generateContent() {
@@ -276,7 +461,7 @@ export default function ContentStudioPage() {
 
     setGenerating(true);
     setError(null);
-    setCopied(false);
+    setCopiedKey(null);
 
     try {
       const response = await fetch("/api/content-studio", {
@@ -290,12 +475,12 @@ export default function ContentStudioPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || "Failed to generate content package.");
+        throw new Error(result.error || "Failed to generate production package.");
       }
 
       setGeneratedPackage(result as GeneratedPackage);
     } catch (generationError: any) {
-      setError(generationError?.message ?? "Failed to generate content package.");
+      setError(generationError?.message ?? "Failed to generate production package.");
     } finally {
       setGenerating(false);
     }
@@ -304,7 +489,7 @@ export default function ContentStudioPage() {
   async function generateIdeas() {
     setGenerating(true);
     setError(null);
-    setCopied(false);
+    setCopiedKey(null);
 
     try {
       const response = await fetch("/api/content-studio", {
@@ -329,18 +514,24 @@ export default function ContentStudioPage() {
     }
   }
 
+  async function copyText(text: string, key: string, errorMessage: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      window.setTimeout(() => {
+        setCopiedKey((current) => (current === key ? null : current));
+      }, 2000);
+    } catch {
+      setError(errorMessage);
+    }
+  }
+
   async function copyOutput() {
     if (!generatedPackage) {
       return;
     }
 
-    try {
-      await navigator.clipboard.writeText(formatPackageForCopy(generatedPackage));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setError("Failed to copy content package.");
-    }
+    await copyText(formatPackageForCopy(generatedPackage), "package", "Failed to copy production package.");
   }
 
   function persistSavedItems(nextItems: SavedHistoryItem[]) {
@@ -365,10 +556,16 @@ export default function ContentStudioPage() {
           topic,
           contentType,
           platform,
-          aspectRatio,
+          aspectRatio: getAspectRatioForContentType(contentType),
           tone,
           language,
           goal,
+          storyStyle,
+          presentationStyle,
+          duration,
+          productionLevel,
+          shootingEnvironment,
+          equipment,
         },
       },
       ...savedItems,
@@ -410,13 +607,17 @@ export default function ContentStudioPage() {
       setMode("create-content");
       setGeneratedPackage(item.package);
       setTopic(item.context?.topic ?? "");
-      setContentType(item.context?.contentType ?? "standard-post");
+      setContentType(normalizeStudioContentType(item.context?.contentType ?? "normal-post"));
       setPlatform(item.context?.platform ?? "facebook");
-      setAspectRatio(item.context?.aspectRatio ?? getDefaultAspectRatio(item.context?.contentType ?? "standard-post"));
-      setAspectRatioLocked(true);
       setTone(item.context?.tone ?? "Professional");
       setLanguage(item.context?.language ?? "English");
       setGoal(item.context?.goal ?? "Engagement");
+      setStoryStyle(item.context?.storyStyle ?? "Educational");
+      setPresentationStyle(item.context?.presentationStyle ?? "Narration");
+      setDuration(item.context?.duration ?? "40");
+      setProductionLevel(item.context?.productionLevel ?? "Professional");
+      setShootingEnvironment(item.context?.shootingEnvironment ?? "On-Site Property");
+      setEquipment(item.context?.equipment ?? ["Phone", "Gimbal"]);
       setError(null);
       return;
     }
@@ -438,15 +639,23 @@ export default function ContentStudioPage() {
     setError(null);
   }
 
+  function toggleEquipment(item: string) {
+    setEquipment((current) => current.includes(item)
+      ? current.filter((entry) => entry !== item)
+      : [...current, item]);
+  }
+
+  const showingStructuredPackage = Boolean(generatedPackage && hasProductionStudioStructure(generatedPackage));
+
   return (
     <div className="min-h-screen w-full px-6 py-8 text-white md:px-10 md:py-10">
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6 md:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-yellow-400">Content Studio v1</p>
-            <h1 className="mt-3 text-3xl font-semibold text-white md:text-5xl">Professional content packages for Borneo Land Gatekeeper</h1>
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-yellow-400">🎬 Production Studio v1</p>
+            <h1 className="mt-3 text-3xl font-semibold text-white md:text-5xl">Production-ready posts and Google Flow packages for Borneo Land Gatekeeper</h1>
             <p className="mt-4 max-w-3xl text-base leading-7 text-slate-300 md:text-lg">
-              Build complete post and video packages with structured outputs, platform-aware formatting, and strict brand rules.
+              Build complete Facebook posts and Google Flow-ready production packages without leaving Gatekeeper AI.
             </p>
           </div>
 
@@ -456,7 +665,7 @@ export default function ContentStudioPage() {
         </div>
 
         <div className="mt-6 inline-flex rounded-2xl border border-slate-800 bg-slate-950 p-1">
-          <ModeButton label="Create Content" active={mode === "create-content"} onClick={() => setMode("create-content")} />
+          <ModeButton label="Production Studio" active={mode === "create-content"} onClick={() => setMode("create-content")} />
           <ModeButton label="Inspiration" active={mode === "inspiration"} onClick={() => setMode("inspiration")} />
           <ModeButton label="Saved" active={mode === "saved"} onClick={() => setMode("saved")} />
         </div>
@@ -474,58 +683,28 @@ export default function ContentStudioPage() {
             <>
               <div className="flex items-center gap-3">
                 <Clapperboard className="text-yellow-400" size={22} />
-                <h2 className="text-2xl font-semibold">Studio Setup</h2>
+                <h2 className="text-2xl font-semibold">Director&apos;s Desk</h2>
               </div>
 
               <div className="mt-6 grid gap-5 md:grid-cols-2">
-                <SelectField label="Content Type" value={contentType} onChange={setContentType} options={contentTypes} />
                 <SelectField label="Platform" value={platform} onChange={setPlatform} options={platforms} />
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-200">Aspect Ratio</label>
-                  <div className="flex gap-3">
-                    <select
-                      value={aspectRatio}
-                      onChange={(event) => {
-                        setAspectRatioLocked(true);
-                        setAspectRatio(event.target.value);
-                      }}
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white"
-                    >
-                      {aspectRatios.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAspectRatioLocked(false);
-                        setAspectRatio(getDefaultAspectRatio(contentType));
-                      }}
-                      className="rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-yellow-500/40 hover:text-white"
-                    >
-                      Auto
-                    </button>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Auto default: {getDefaultAspectRatio(contentType)} {aspectRatioLocked ? "• manual override active" : "• auto-select active"}
-                  </p>
-                </div>
-
-                <SelectField
-                  label="Tone"
-                  value={tone}
-                  onChange={setTone}
-                  options={tones.map((option) => ({ value: option, label: option }))}
-                />
-                <SelectField
-                  label="Language"
-                  value={language}
-                  onChange={setLanguage}
-                  options={languages.map((option) => ({ value: option, label: option }))}
-                />
+                <SelectField label="Content Type" value={contentType} onChange={setContentType} options={contentTypes} />
                 <SelectField label="Goal" value={goal} onChange={setGoal} options={goals.map((option) => ({ value: option, label: option }))} />
+                <SelectField label="Language" value={language} onChange={setLanguage} options={languages.map((option) => ({ value: option, label: option }))} />
+                <SelectField label="Story Style" value={storyStyle} onChange={setStoryStyle} options={storyStyles.map((option) => ({ value: option, label: option }))} />
+                <SelectField label="Presentation Style" value={presentationStyle} onChange={setPresentationStyle} options={presentationStyles.map((option) => ({ value: option, label: option }))} />
+
+                {contentType === "reel-video" ? (
+                  <SelectField
+                    label="Duration"
+                    value={duration}
+                    onChange={setDuration}
+                    options={durationOptions.map((option) => ({ value: String(option), label: `${option} sec` }))}
+                  />
+                ) : null}
+
+                <SelectField label="Production Level" value={productionLevel} onChange={setProductionLevel} options={productionLevels.map((option) => ({ value: option, label: option }))} />
+                <SelectField label="Shooting Environment" value={shootingEnvironment} onChange={setShootingEnvironment} options={shootingEnvironments.map((option) => ({ value: option, label: option }))} />
               </div>
 
               <div className="mt-5">
@@ -534,21 +713,45 @@ export default function ContentStudioPage() {
                   value={topic}
                   onChange={(event) => setTopic(event.target.value)}
                   rows={5}
-                  placeholder="Example: Weekly Facebook task about why land buyers should verify title status before committing."
+                  placeholder="Example: 40-second documentary reel explaining why serious land buyers should verify title status before making an offer."
                   className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-4 text-sm text-white placeholder:text-slate-500"
                 />
+              </div>
+
+              <div className="mt-5">
+                <label className="mb-3 block text-sm font-medium text-slate-200">Equipment</label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {equipmentOptions.map((item) => {
+                    const checked = equipment.includes(item);
+
+                    return (
+                      <label
+                        key={item}
+                        className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${checked ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-100" : "border-slate-700 bg-slate-950 text-slate-200 hover:border-yellow-500/30"}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleEquipment(item)}
+                          className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-yellow-500"
+                        />
+                        <span>{item}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <InfoCard
                   icon={<Megaphone size={18} className="text-yellow-400" />}
-                  title="Content Rules"
-                  body="No invented property facts. Professional by default. Emojis only when Funny is selected."
+                  title="Production Rules"
+                  body="No invented property facts. Every package includes a caption, CTA, hashtags, and copy-ready prompts for production."
                 />
                 <InfoCard
                   icon={<ImagePlay size={18} className="text-yellow-400" />}
-                  title="Video Package"
-                  body="Reel, drone, and progress formats include script, prompts, music style, and thumbnail guidance."
+                  title="Google Flow Ready"
+                  body="Reel prompts enforce 8-second scene caps, continuity, camera direction, motion, and no text or logos."
                 />
               </div>
             </>
@@ -615,17 +818,17 @@ export default function ContentStudioPage() {
                 <InfoCard
                   icon={<FolderClock size={18} className="text-yellow-400" />}
                   title="Reusable Drafts"
-                  body="Load saved packages back into Create Content or reload saved idea cards into Inspiration without touching the database."
+                  body="Load saved packages back into Production Studio or reload saved idea cards into Inspiration without touching the database."
                 />
               </div>
             </>
           )}
 
-          {error && (
+          {error ? (
             <p className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {error}
             </p>
-          )}
+          ) : null}
 
           <div className="mt-6 flex flex-wrap gap-3">
             {mode === "create-content" ? (
@@ -637,7 +840,7 @@ export default function ContentStudioPage() {
                   className="inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-5 py-3 font-semibold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Sparkles size={18} />
-                  {generating ? "Generating..." : "Generate Package"}
+                  {generating ? "Generating..." : "Generate Production Package"}
                 </button>
 
                 <button
@@ -657,7 +860,7 @@ export default function ContentStudioPage() {
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <FolderClock size={18} />
-                  Save Package
+                  Save Production Package
                 </button>
               </>
             ) : mode === "inspiration" ? (
@@ -695,19 +898,19 @@ export default function ContentStudioPage() {
                   <FolderClock className="text-yellow-400" size={22} />
                 )}
                 <h2 className="text-2xl font-semibold">
-                  {mode === "create-content" ? "Generated Package" : mode === "inspiration" ? "Idea Cards" : "Saved Items"}
+                  {mode === "create-content" ? "Production Package" : mode === "inspiration" ? "Idea Cards" : "Saved Items"}
                 </h2>
               </div>
               <p className="mt-3 text-sm text-slate-400">
                 {mode === "create-content"
-                  ? "Output is structured for copy-and-paste publishing or creative production handoff."
+                  ? "Output is structured for direct copy, Google Flow prompt generation, and production handoff."
                   : mode === "inspiration"
-                    ? "Generate concept-level ideas first, then push the best one back into Create Content."
-                    : "Review saved idea cards and generated packages stored in this browser."}
+                    ? "Generate concept-level ideas first, then push the best one back into Production Studio."
+                    : "Review saved idea cards and generated production packages stored in this browser."}
               </p>
             </div>
 
-            {mode === "create-content" && (
+            {mode === "create-content" ? (
               <button
                 type="button"
                 onClick={copyOutput}
@@ -715,18 +918,199 @@ export default function ContentStudioPage() {
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Copy size={16} />
-                {copied ? "Copied" : "Copy Output"}
+                {copiedKey === "package" ? "Copied" : "Copy Entire Production Package"}
               </button>
-            )}
+            ) : null}
           </div>
 
           {mode === "create-content" ? (
             !generatedPackage ? (
               <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-                Set up your package on the left, then generate content for Borneo Land Gatekeeper.
+                Set up the Director&apos;s Desk on the left, then generate a complete production package.
+              </div>
+            ) : showingStructuredPackage ? (
+              <div className="mt-6 space-y-4">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                  <h3 className="text-xl font-semibold text-white">{generatedPackage.title}</h3>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                    <MetaPill icon={<Clapperboard size={14} />} label={generatedPackage.contentType} />
+                    <MetaPill icon={<Languages size={14} />} label={generatedPackage.platform} />
+                    <MetaPill icon={<Target size={14} />} label={generatedPackage.aspectRatio} />
+                    <MetaPill icon={<ClipboardList size={14} />} label={generatedPackage.outputMode ?? "Production Package"} />
+                  </div>
+                </div>
+
+                <CopyCard
+                  title="Creative Brief"
+                  copyLabel="Copy Creative Brief"
+                  copied={copiedKey === "creative-brief"}
+                  onCopy={() => copyText(formatCreativeBriefForCopy(generatedPackage), "creative-brief", "Failed to copy creative brief.")}
+                >
+                  <FieldGrid
+                    items={[
+                      { label: "Objective", value: generatedPackage.creativeBrief?.objective ?? "" },
+                      { label: "Target Audience", value: generatedPackage.creativeBrief?.targetAudience ?? "" },
+                      { label: "Key Message", value: generatedPackage.creativeBrief?.keyMessage ?? "" },
+                      { label: "Story Style", value: generatedPackage.creativeBrief?.storyStyle ?? "" },
+                      { label: "Presentation Style", value: generatedPackage.creativeBrief?.presentationStyle ?? "" },
+                      { label: "Estimated Production Time", value: generatedPackage.creativeBrief?.estimatedProductionTime ?? "" },
+                    ]}
+                  />
+                </CopyCard>
+
+                <CopyCard
+                  title="Visual Direction"
+                  copyLabel="Copy Visual Direction"
+                  copied={copiedKey === "visual-direction"}
+                  onCopy={() => copyText(formatVisualDirectionForCopy(generatedPackage), "visual-direction", "Failed to copy visual direction.")}
+                >
+                  <FieldGrid
+                    items={[
+                      { label: "Mood", value: generatedPackage.visualDirection?.mood ?? "" },
+                      { label: "Lighting", value: generatedPackage.visualDirection?.lighting ?? "" },
+                      { label: "Colour Palette", value: generatedPackage.visualDirection?.colourPalette ?? "" },
+                      { label: "Camera Style", value: generatedPackage.visualDirection?.cameraStyle ?? "" },
+                      { label: "Atmosphere", value: generatedPackage.visualDirection?.atmosphere ?? "" },
+                    ]}
+                  />
+                </CopyCard>
+
+                <CopyCard
+                  title="Production Checklist"
+                  copyLabel="Copy Production Checklist"
+                  copied={copiedKey === "production-checklist"}
+                  onCopy={() => copyText(formatProductionChecklistForCopy(generatedPackage), "production-checklist", "Failed to copy production checklist.")}
+                >
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {(generatedPackage.productionChecklist ?? []).map((item) => (
+                      <div key={item} className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-200">
+                        ✓ {item}
+                      </div>
+                    ))}
+                  </div>
+                </CopyCard>
+
+                <CopyCard
+                  title="Storyboard"
+                  copyLabel="Copy Storyboard"
+                  copied={copiedKey === "storyboard"}
+                  onCopy={() => copyText(formatStoryboardForCopy(generatedPackage), "storyboard", "Failed to copy storyboard.")}
+                >
+                  <div className="space-y-3">
+                    {(generatedPackage.storyboard ?? []).map((scene, index) => (
+                      <div key={`${scene.sceneNumber}-${scene.summary}`} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Scene {scene.sceneNumber}</p>
+                        <p className="mt-2 text-sm text-slate-200">{scene.summary}</p>
+                        {index < (generatedPackage.storyboard?.length ?? 0) - 1 ? (
+                          <p className="mt-3 text-yellow-400">↓</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </CopyCard>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                  <div className="mb-4 flex items-center gap-3">
+                    <Video className="text-yellow-400" size={20} />
+                    <div>
+                      <h3 className="text-xl font-semibold text-white">Production Board</h3>
+                      <p className="text-sm text-slate-400">One scene card per production beat with copy-ready prompts.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {(generatedPackage.scenes ?? []).map((scene) => (
+                      <div key={scene.sceneNumber} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-yellow-400">🎬 Scene {scene.sceneNumber}</p>
+                            <p className="mt-2 text-sm text-slate-300">Estimated Duration: {scene.estimatedDuration}</p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => copyText(formatSceneForCopy(scene), `scene-${scene.sceneNumber}`, "Failed to copy scene.")}
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+                          >
+                            <Copy size={16} />
+                            {copiedKey === `scene-${scene.sceneNumber}` ? "Copied" : "Copy Entire Scene"}
+                          </button>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                          <div className="space-y-4">
+                            <InfoPanel title="Purpose" value={scene.purpose} />
+                            <InfoPanel title="Director Notes" value={scene.directorNotes} />
+                            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950 p-4">
+                              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Thumbnail Placeholder</p>
+                              <div className="mt-3 flex min-h-28 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-5 text-center text-sm text-slate-300">
+                                {scene.thumbnailPlaceholder}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <PromptCard
+                              title="Image Prompt"
+                              value={scene.imagePrompt}
+                              copyLabel="Copy Image Prompt"
+                              copied={copiedKey === `scene-image-${scene.sceneNumber}`}
+                              onCopy={() => copyText(scene.imagePrompt, `scene-image-${scene.sceneNumber}`, "Failed to copy image prompt.")}
+                            />
+                            <PromptCard
+                              title="Video Prompt"
+                              value={scene.videoPrompt}
+                              copyLabel="Copy Video Prompt"
+                              copied={copiedKey === `scene-video-${scene.sceneNumber}`}
+                              onCopy={() => copyText(scene.videoPrompt, `scene-video-${scene.sceneNumber}`, "Failed to copy video prompt.")}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                  <div className="mb-4 flex items-center gap-3">
+                    <Megaphone className="text-yellow-400" size={20} />
+                    <div>
+                      <h3 className="text-xl font-semibold text-white">Final Deliverables</h3>
+                      <p className="text-sm text-slate-400">Caption, CTA, and hashtags with dedicated copy actions.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <PromptCard
+                      title="Caption"
+                      value={generatedPackage.caption ?? ""}
+                      copyLabel="Copy Caption"
+                      copied={copiedKey === "caption"}
+                      onCopy={() => copyText(generatedPackage.caption ?? "", "caption", "Failed to copy caption.")}
+                    />
+                    <PromptCard
+                      title="CTA"
+                      value={generatedPackage.cta ?? ""}
+                      copyLabel="Copy CTA"
+                      copied={copiedKey === "cta"}
+                      onCopy={() => copyText(generatedPackage.cta ?? "", "cta", "Failed to copy CTA.")}
+                    />
+                    <PromptCard
+                      title="Hashtags"
+                      value={generatedPackage.hashtags ?? ""}
+                      copyLabel="Copy Hashtags"
+                      copied={copiedKey === "hashtags"}
+                      onCopy={() => copyText(generatedPackage.hashtags ?? "", "hashtags", "Failed to copy hashtags.")}
+                    />
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="mt-6 space-y-4">
+                <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+                  Legacy saved package loaded. New generations use the full Production Studio layout below.
+                </div>
+
                 <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
                   <h3 className="text-xl font-semibold text-white">{generatedPackage.title}</h3>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -736,7 +1120,7 @@ export default function ContentStudioPage() {
                   </div>
                 </div>
 
-                {generatedPackage.sections.map((section) => (
+                {(generatedPackage.sections ?? []).map((section) => (
                   <div key={section.label} className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
                     <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{section.label}</p>
                     <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-200">{section.value}</div>
@@ -795,7 +1179,7 @@ export default function ContentStudioPage() {
             )
           ) : savedItems.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-              Save a generated package or idea card to build local history in this browser.
+              Save a generated production package or idea card to build local history in this browser.
             </div>
           ) : (
             <div className="mt-6 grid gap-4">
@@ -804,7 +1188,7 @@ export default function ContentStudioPage() {
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="max-w-3xl">
                       <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.2em] text-slate-500">
-                        <span>{item.kind === "content-package" ? "Create Content" : "Inspiration"}</span>
+                        <span>{item.kind === "content-package" ? "Production Studio" : "Inspiration"}</span>
                         <span>{formatSavedDate(item.savedAt)}</span>
                       </div>
                       <h3 className="mt-3 text-xl font-semibold text-white">{item.title}</h3>
@@ -878,6 +1262,90 @@ function SelectField({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function CopyCard({
+  title,
+  copyLabel,
+  copied,
+  onCopy,
+  children,
+}: {
+  title: string;
+  copyLabel: string;
+  copied: boolean;
+  onCopy: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="text-xl font-semibold text-white">{title}</h3>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+        >
+          <Copy size={16} />
+          {copied ? "Copied" : copyLabel}
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function PromptCard({
+  title,
+  value,
+  copyLabel,
+  copied,
+  onCopy,
+}: {
+  title: string;
+  value: string;
+  copyLabel: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+        >
+          <Copy size={16} />
+          {copied ? "Copied" : copyLabel}
+        </button>
+      </div>
+      <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200">{value}</div>
+    </div>
+  );
+}
+
+function FieldGrid({ items }: { items: Array<{ label: string; value: string }> }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {items.map((item) => (
+        <div key={item.label} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{item.label}</p>
+          <p className="mt-3 text-sm leading-7 text-slate-200">{item.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InfoPanel({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
+      <p className="mt-3 text-sm leading-7 text-slate-200">{value}</p>
     </div>
   );
 }
