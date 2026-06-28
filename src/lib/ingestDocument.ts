@@ -3,6 +3,16 @@ import { createEmbedding } from "@/lib/embeddings";
 import { extractText } from "@/lib/extractText";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+const imageMimeTypes = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+]);
+
+const imageAssetStatus = "image_asset";
+const fallbackSuccessStatus = "completed";
+
 export class IngestDocumentError extends Error {
   status: number;
 
@@ -25,6 +35,12 @@ export async function ingestDocument(documentId: string) {
   }
 
   const storagePath = doc.storage_path ?? doc.filename ?? doc.file_name;
+  const mimeType = (doc.mime_type ?? getMimeType(storagePath)).toLowerCase();
+
+  if (imageMimeTypes.has(mimeType)) {
+    await markImageAssetReady(doc.id, mimeType);
+    return { chunks: 0 };
+  }
 
   const { data: fileData, error: downloadError } = await supabaseAdmin.storage
     .from("knowledge-vault")
@@ -37,7 +53,6 @@ export async function ingestDocument(documentId: string) {
 
   const arrayBuffer = await (fileData as Blob).arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  const mimeType = doc.mime_type ?? getMimeType(storagePath);
   const text = await extractText(buffer, mimeType);
 
   if (!text || text.trim().length === 0) {
@@ -110,6 +125,40 @@ async function markDocumentFailed(documentId: string, errorMessage: string) {
   });
 }
 
+function isMissingMetadataColumnError(message: string) {
+  const normalizedMessage = message.toLowerCase();
+  return normalizedMessage.includes("metadata") && normalizedMessage.includes("does not exist");
+}
+
+async function markImageAssetReady(documentId: string, mimeType: string) {
+  const { error: imageStatusError } = await supabaseAdmin
+    .from("documents")
+    .update({ status: imageAssetStatus })
+    .eq("id", documentId);
+
+  if (imageStatusError) {
+    await supabaseAdmin
+      .from("documents")
+      .update({ status: fallbackSuccessStatus })
+      .eq("id", documentId);
+  }
+
+  const metadataPayload = {
+    assetType: "image",
+    imageMimeType: mimeType,
+    imageProcessing: "skipped_text_extraction",
+  };
+
+  const { error: metadataError } = await supabaseAdmin
+    .from("documents")
+    .update({ metadata: metadataPayload } as any)
+    .eq("id", documentId);
+
+  if (metadataError && !isMissingMetadataColumnError(metadataError.message)) {
+    console.warn("Failed to save image metadata", metadataError.message);
+  }
+}
+
 function getMimeType(path: string) {
   const normalizedPath = path || "";
   const ext = normalizedPath.split(".").pop()?.toLowerCase();
@@ -119,6 +168,9 @@ function getMimeType(path: string) {
     return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   }
   if (ext === "txt") return "text/plain";
+  if (ext === "png") return "image/png";
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "webp") return "image/webp";
 
   return "application/octet-stream";
 }

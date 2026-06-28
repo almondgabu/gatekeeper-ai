@@ -17,6 +17,81 @@ type StoredDocumentResult = {
   indexingError?: string;
 };
 
+const imageMimeTypes = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+]);
+
+const imageExtensions = new Set(["png", "jpg", "jpeg", "webp"]);
+
+const imageAssetStatus = "image_asset";
+const fallbackSuccessStatus = "completed";
+
+function normalizeMimeType(mimeType: string | null, filename: string) {
+  const normalizedMimeType = mimeType?.trim().toLowerCase() ?? "";
+
+  if (normalizedMimeType) {
+    return normalizedMimeType;
+  }
+
+  const extension = filename.split(".").pop()?.toLowerCase() ?? "";
+
+  if (extension === "png") return "image/png";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "webp") return "image/webp";
+
+  return "application/octet-stream";
+}
+
+function isImageAsset(mimeType: string, filename: string) {
+  if (imageMimeTypes.has(mimeType)) {
+    return true;
+  }
+
+  const extension = filename.split(".").pop()?.toLowerCase() ?? "";
+  return imageExtensions.has(extension);
+}
+
+function isMissingMetadataColumnError(message: string) {
+  const normalizedMessage = message.toLowerCase();
+  return normalizedMessage.includes("metadata") && normalizedMessage.includes("does not exist");
+}
+
+async function setImageAssetStatus(documentId: string) {
+  const { error: imageStatusError } = await supabaseAdmin
+    .from("documents")
+    .update({ status: imageAssetStatus })
+    .eq("id", documentId);
+
+  if (!imageStatusError) {
+    return;
+  }
+
+  await supabaseAdmin
+    .from("documents")
+    .update({ status: fallbackSuccessStatus })
+    .eq("id", documentId);
+}
+
+async function setImageAssetMetadata(documentId: string, mimeType: string) {
+  const metadataPayload = {
+    assetType: "image",
+    imageMimeType: mimeType,
+    imageProcessing: "skipped_text_extraction",
+  };
+
+  const { error } = await supabaseAdmin
+    .from("documents")
+    .update({ metadata: metadataPayload } as any)
+    .eq("id", documentId);
+
+  if (error && !isMissingMetadataColumnError(error.message)) {
+    console.warn("Failed to save image metadata", error.message);
+  }
+}
+
 function buildStoragePath(filename: string) {
   const normalizedFilename = filename.trim().replace(/[^a-zA-Z0-9._-]+/g, "-") || "document.txt";
   return `${Date.now()}-${normalizedFilename}`;
@@ -29,11 +104,12 @@ export async function storeAndIngestDocument({
   projectId = null,
 }: StoreDocumentInput): Promise<StoredDocumentResult> {
   const storagePath = buildStoragePath(filename);
+  const normalizedMimeType = normalizeMimeType(mimeType, filename);
 
   const { error: uploadError } = await supabaseAdmin.storage
     .from("knowledge-vault")
     .upload(storagePath, buffer, {
-      contentType: mimeType || undefined,
+      contentType: normalizedMimeType || undefined,
       upsert: false,
     });
 
@@ -47,7 +123,7 @@ export async function storeAndIngestDocument({
       filename,
       storage_path: storagePath,
       file_size: buffer.byteLength,
-      mime_type: mimeType,
+      mime_type: normalizedMimeType,
       project_id: projectId,
       status: "pending",
     })
@@ -57,6 +133,19 @@ export async function storeAndIngestDocument({
   if (insertError || !document) {
     await supabaseAdmin.storage.from("knowledge-vault").remove([storagePath]);
     throw new Error(insertError?.message ?? "failed to create document row");
+  }
+
+  if (isImageAsset(normalizedMimeType, filename)) {
+    await setImageAssetMetadata(document.id, normalizedMimeType);
+    await setImageAssetStatus(document.id);
+
+    return {
+      success: true,
+      documentId: document.id,
+      storagePath,
+      indexed: true,
+      chunks: 0,
+    };
   }
 
   try {

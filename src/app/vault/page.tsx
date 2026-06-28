@@ -202,13 +202,13 @@ useEffect(() => {
   loadProjects();
 }, []);
   return (
-    <div className="p-8 max-w-7xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">
+    <div className="box-border w-full max-w-7xl overflow-x-hidden px-4 py-6 sm:px-6 sm:py-8">
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-3xl font-bold leading-tight sm:text-4xl">
           Knowledge Vault
         </h1>
 
-        <p className="text-slate-400 mt-2">
+        <p className="mt-1 text-sm leading-6 text-slate-400 sm:mt-2 sm:text-base sm:leading-7">
           Your private second brain. Store, organize and retrieve knowledge.
         </p>
 
@@ -220,22 +220,22 @@ useEffect(() => {
       </div>
 
       {/* TODO: ChatGPT share import disabled because shared pages may require login and may not expose transcript content. */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_320px]">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-[minmax(0,2fr)_320px]">
 
         {/* Upload */}
-        <div className="border-2 border-dashed border-slate-700 rounded-2xl p-10 text-center">
-  <div className="text-5xl mb-4">📄</div>
+        <div className="box-border w-full max-w-full overflow-hidden rounded-2xl border-2 border-dashed border-slate-700 p-5 text-center sm:p-6 lg:p-10">
+  <div className="mb-3 text-3xl sm:mb-4 sm:text-4xl">📄</div>
 
-  <h3 className="text-xl font-semibold">
+  <h3 className="text-lg font-semibold sm:text-xl">
     Upload Documents
   </h3>
 
-  <p className="text-slate-400 mt-2">
+  <p className="mt-1 text-sm text-slate-400 sm:mt-2 sm:text-base">
     Drag & drop files or click to browse
   </p>
 
-  <div className="mt-6 text-left">
-    <label className="mb-2 block text-sm font-medium text-slate-300">
+  <div className="mt-5 text-left sm:mt-6">
+    <label className="mb-2 block text-xs font-medium text-slate-300 sm:text-sm">
       Project Scope
     </label>
 
@@ -243,7 +243,7 @@ useEffect(() => {
       value={selectedProjectId}
       onChange={(e) => setSelectedProjectId(e.target.value)}
       disabled={uploading}
-      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white"
+      className="box-border w-full max-w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white sm:px-4 sm:py-3"
     >
       <option value="">No Project / Global Vault</option>
       {projects.map((project) => (
@@ -262,22 +262,22 @@ useEffect(() => {
   type="file"
   onChange={handleUpload}
   disabled={uploading}
-  className="mt-6"
+  className="mt-5 box-border w-full max-w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border file:border-slate-600 file:bg-slate-900 file:px-3 file:py-1.5 file:text-sm file:text-slate-100 sm:mt-6"
 />
 {uploading && (
-  <p className="mt-3 text-yellow-400">
+  <p className="mt-3 text-sm text-yellow-400">
     Uploading...
   </p>
 )}
 
 
-  <p className="text-xs text-slate-500 mt-4">
-    PDF, DOCX, TXT, CSV
+  <p className="mt-3 break-words text-xs text-slate-500 sm:mt-4">
+    PDF, DOCX, TXT, CSV, PNG, JPG, JPEG, WEBP
   </p>
 </div>
 
         {/* Stats */}
-        <div className="border border-slate-800 rounded-2xl p-6 bg-slate-900">
+        <div className="box-border min-w-0 rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6">
           <h2 className="text-lg font-semibold mb-4 text-white">
             Vault Status
           </h2>
@@ -316,7 +316,7 @@ useEffect(() => {
 
       {/* Recent Files */}
 
-      <div className="mt-8 border border-slate-800 rounded-2xl p-6 bg-slate-900 text-white">
+      <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-4 text-white sm:mt-8 sm:p-6">
         <h2 className="text-lg font-semibold mb-4 text-white">
           Recent Documents
         </h2>
@@ -325,7 +325,7 @@ useEffect(() => {
   placeholder="Search documents..."
   value={searchTerm}
   onChange={(e) => setSearchTerm(e.target.value)}
-  className="w-full mb-4 px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-400"
+  className="mb-4 box-border w-full max-w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-400 sm:px-4"
 />
 
         <div className="space-y-3">
