@@ -106,6 +106,7 @@ type SavedHistoryItem = {
     productionLevel?: string;
     shootingEnvironment?: string;
     equipment?: string[];
+    ideaWorkflow?: "normal-post" | "video-reel";
     ideaSourceType?: "topic" | "image";
     ideaType?: "social_post" | "short_video";
     ideaTopic?: string;
@@ -179,6 +180,18 @@ const ideaExplorerGoals = [
 const ideaTypeOptions = [
   { value: "social_post", label: "Normal Post" },
   { value: "short_video", label: "Short Video" },
+] as const;
+const ideaWorkflowOptions = [
+  {
+    value: "normal-post",
+    label: "Normal Post",
+    description: "Prepare 10 single-image post ideas with one professional key visual prompt each.",
+  },
+  {
+    value: "video-reel",
+    label: "Video / Reel",
+    description: "Prepare 10 video concept ideas. Duration presets and scene logic will be added next.",
+  },
 ] as const;
 const savedHistoryStorageKey = "gatekeeper-content-studio-history";
 const supportedIdeaImageMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -369,6 +382,18 @@ function getIdeaTypeLabel(value: "social_post" | "short_video") {
   return ideaTypeOptions.find((option) => option.value === value)?.label ?? "Normal Post";
 }
 
+function mapWorkflowToIdeaType(value: "normal-post" | "video-reel") {
+  return value === "video-reel" ? "short_video" : "social_post";
+}
+
+function mapIdeaTypeToWorkflow(value: "social_post" | "short_video") {
+  return value === "short_video" ? "video-reel" : "normal-post";
+}
+
+function getIdeaWorkflowLabel(value: "normal-post" | "video-reel") {
+  return value === "video-reel" ? "Video / Reel" : "Normal Post";
+}
+
 function mapExplorerGoalToStudioGoal(value: string) {
   if (value === "find-buyers" || value === "find-sellers") {
     return "Selling";
@@ -413,14 +438,21 @@ function mapInspirationIdeaToWorkspaceIdea(
   idea: InspirationIdea,
   selectedPlatform: string,
   selectedGoal: string,
+  selectedTone: string,
+  selectedStoryStyle: string,
 ): MapperIdea {
   return {
     title: idea.title,
     hook: idea.summary || idea.title,
     coreConcept: idea.summary || idea.whyThisIdea || idea.title,
+    ideaType: idea.ideaType ?? "social_post",
+    bestFormat: idea.bestFormat,
     targetAudience: "General audience",
     emotion: "Trust",
     platform: selectedPlatform,
+    inheritedGoal: getGoalLabel(selectedGoal),
+    inheritedTone: selectedTone,
+    inheritedStyle: selectedStoryStyle,
     estimatedReach: Math.max(idea.potentialScore * 100, 100),
     engagementPotential: idea.potentialScore,
     difficulty: idea.difficulty,
@@ -449,7 +481,7 @@ function isSupportedIdeaImageDataUrl(dataUrl: string | null) {
 
 export default function ContentStudioPage() {
   const hasAppliedOpportunityPrefill = useRef(false);
-  const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("create-content");
+  const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("inspiration");
   const [contentType, setContentType] = useState("normal-post");
   const [platform, setPlatform] = useState("facebook");
   const [topic, setTopic] = useState("");
@@ -464,6 +496,7 @@ export default function ContentStudioPage() {
   const [videoType, setVideoType] = useState("AI Video");
   const [inputSource, setInputSource] = useState("topic");
   const [ideaSourceType, setIdeaSourceType] = useState<"topic" | "image">("topic");
+  const [ideaWorkflow, setIdeaWorkflow] = useState<"normal-post" | "video-reel" | null>(null);
   const [ideaType, setIdeaType] = useState<"social_post" | "short_video">("social_post");
   const [ideaTopic, setIdeaTopic] = useState("");
   const [ideaContext, setIdeaContext] = useState("");
@@ -552,11 +585,17 @@ export default function ContentStudioPage() {
     [contentType, platform, topic, tone, language, goal, storyStyle, presentationStyle, durationSeconds, productionLevel],
   );
 
+  const selectedIdeaType = useMemo(
+    () => (ideaWorkflow ? mapWorkflowToIdeaType(ideaWorkflow) : ideaType),
+    [ideaWorkflow, ideaType],
+  );
+
   const inspirationPayload = useMemo(
     () => ({
       mode: "inspiration",
       sourceType: ideaSourceType,
-      ideaType,
+      workflow: ideaWorkflow,
+      ideaType: selectedIdeaType,
       platform,
       topic: ideaSourceType === "topic" ? ideaTopic.trim() : "",
       imageDataUrl: ideaSourceType === "image" ? ideaImageDataUrl : null,
@@ -564,7 +603,7 @@ export default function ContentStudioPage() {
       goal: ideaGoal,
       ideaCount: 10,
     }),
-    [ideaSourceType, ideaType, platform, ideaTopic, ideaImageDataUrl, ideaContext, ideaGoal],
+    [ideaSourceType, ideaWorkflow, selectedIdeaType, platform, ideaTopic, ideaImageDataUrl, ideaContext, ideaGoal],
   );
 
   const visibleIdeas = ideaPages[ideaPageIndex] ?? [];
@@ -623,6 +662,11 @@ export default function ContentStudioPage() {
   }
 
   async function generateIdeas() {
+    if (!ideaWorkflow) {
+      setError("Choose Normal Post or Video / Reel before generating ideas.");
+      return;
+    }
+
     if (ideaSourceType === "topic" && !ideaTopic.trim()) {
       setError("Type a topic to explore ideas.");
       return;
@@ -956,8 +1000,9 @@ export default function ContentStudioPage() {
         savedAt: new Date().toISOString(),
         idea,
         context: {
+          ideaWorkflow: ideaWorkflow ?? undefined,
           ideaSourceType,
-          ideaType,
+          ideaType: selectedIdeaType,
           ideaTopic,
           ideaContext,
           ideaGoal,
@@ -1002,7 +1047,9 @@ export default function ContentStudioPage() {
       setIdeaPages([[item.idea]]);
       setIdeaPageIndex(0);
       setIdeaSourceType(item.context?.ideaSourceType ?? "topic");
-      setIdeaType(item.context?.ideaType ?? "social_post");
+      const loadedIdeaType = item.context?.ideaType ?? "social_post";
+      setIdeaType(loadedIdeaType);
+      setIdeaWorkflow(item.context?.ideaWorkflow ?? mapIdeaTypeToWorkflow(loadedIdeaType));
       setIdeaTopic(item.context?.ideaTopic ?? "");
       setIdeaContext(item.context?.ideaContext ?? "");
       setIdeaGoal(normalizeExplorerGoal(item.context?.ideaGoal));
@@ -1021,12 +1068,15 @@ export default function ContentStudioPage() {
   }
 
   function useIdea(idea: InspirationIdea) {
+    const nextWorkflow = mapIdeaTypeToWorkflow(idea.ideaType ?? "social_post");
     const workspace = createWorkspaceFromIdea(
-      mapInspirationIdeaToWorkspaceIdea(idea, platform, ideaGoal),
+      mapInspirationIdeaToWorkspaceIdea(idea, platform, ideaGoal, tone, storyStyle),
     );
 
     saveProductionWorkspace(workspace);
     setActiveProductionWorkspace(workspace);
+    setIdeaWorkflow(nextWorkflow);
+    setIdeaType(mapWorkflowToIdeaType(nextWorkflow));
     setTopic(`${idea.title}: ${getIdeaSummary(idea)}`);
     setContentType(mapIdeaBestFormatToContentType(idea.bestFormat));
     setGoal(mapExplorerGoalToStudioGoal(ideaGoal));
@@ -1056,16 +1106,32 @@ export default function ContentStudioPage() {
   }
 
   const showingStructuredPackage = Boolean(generatedPackage && hasProductionStudioStructure(generatedPackage));
+  const isNormalPostWorkspaceActive =
+    mode === "create-content" &&
+    Boolean(activeProductionWorkspace) &&
+    (
+      activeProductionWorkspace?.sourceMetadata?.ideaType === "social_post" ||
+      activeProductionWorkspace?.sourceMetadata?.bestFormat === "Normal Post"
+    );
+  const createContentTabLabel = isNormalPostWorkspaceActive ? "Post Workspace" : "Production Studio";
 
   return (
     <div className="min-h-screen w-full px-6 py-8 text-white md:px-10 md:py-10">
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6 md:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-yellow-400">🎬 Production Studio v1</p>
-            <h1 className="mt-3 text-3xl font-semibold text-white md:text-5xl">Production-ready posts and Google Flow packages for Borneo Land Gatekeeper</h1>
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-yellow-400">
+              {isNormalPostWorkspaceActive ? "✍️ Post Workspace" : "🎬 Production Studio v1"}
+            </p>
+            <h1 className="mt-3 text-3xl font-semibold text-white md:text-5xl">
+              {isNormalPostWorkspaceActive
+                ? "Professional post drafting workspace for Borneo Land Gatekeeper"
+                : "Production-ready posts and Google Flow packages for Borneo Land Gatekeeper"}
+            </h1>
             <p className="mt-4 max-w-3xl text-base leading-7 text-slate-300 md:text-lg">
-              Build complete Facebook posts and Google Flow-ready production packages without leaving Gatekeeper AI.
+              {isNormalPostWorkspaceActive
+                ? "Write, refine, and finalize a single-image social media post with one professional image prompt."
+                : "Build complete Facebook posts and Google Flow-ready production packages without leaving Gatekeeper AI."}
             </p>
           </div>
 
@@ -1075,7 +1141,7 @@ export default function ContentStudioPage() {
         </div>
 
         <div className="mt-6 inline-flex rounded-2xl border border-slate-800 bg-slate-950 p-1">
-          <ModeButton label="Production Studio" active={mode === "create-content"} onClick={() => setMode("create-content")} />
+          <ModeButton label={createContentTabLabel} active={mode === "create-content"} onClick={() => setMode("create-content")} />
           <ModeButton label="Idea Explorer" active={mode === "inspiration"} onClick={() => setMode("inspiration")} />
           <ModeButton label="Saved" active={mode === "saved"} onClick={() => setMode("saved")} />
         </div>
@@ -1090,89 +1156,117 @@ export default function ContentStudioPage() {
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.1fr)]">
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
           {mode === "create-content" ? (
-            <>
-              <div className="flex items-center gap-3">
-                <Clapperboard className="text-yellow-400" size={22} />
-                <h2 className="text-2xl font-semibold">Director&apos;s Desk</h2>
-              </div>
-
-              <div className="mt-6 space-y-5">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Creative Brief</p>
-                  <div className="mt-4 grid gap-5 md:grid-cols-2">
-                    <SelectField label="Goal" value={goal} onChange={setGoal} options={goals.map((option) => ({ value: option, label: option }))} />
-                    <SelectField label="Tone" value={tone} onChange={setTone} options={["Professional", "Bold", "Friendly", "Educational"].map((option) => ({ value: option, label: option }))} />
-                    <SelectField label="Language" value={language} onChange={setLanguage} options={languages.map((option) => ({ value: option, label: option }))} />
-                    <SelectField label="Story Style" value={storyStyle} onChange={setStoryStyle} options={storyStyles.map((option) => ({ value: option, label: option }))} />
-                  </div>
+            isNormalPostWorkspaceActive ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <Clapperboard className="text-yellow-400" size={22} />
+                  <h2 className="text-2xl font-semibold">Content Settings</h2>
                 </div>
 
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Platform & Output</p>
-                  <div className="mt-4 grid gap-5 md:grid-cols-2">
-                    <SelectField label="Platform" value={platform} onChange={setPlatform} options={platforms} />
-                    <SelectField label="Content Type" value={contentType} onChange={setContentType} options={contentTypes} />
-                    <SelectField label="Presentation Style" value={presentationStyle} onChange={setPresentationStyle} options={presentationStyles.map((option) => ({ value: option, label: option }))} />
-                    <SelectField label="Production Level" value={productionLevel} onChange={setProductionLevel} options={productionLevels.map((option) => ({ value: option, label: option }))} />
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Video Settings</p>
-                  <div className="mt-4 grid gap-5 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-200">Video Length Preset</label>
-                      <select
-                        value={`${durationSeconds}-${sceneCount}`}
-                        onChange={(event) => handleVideoLengthPresetChange(event.target.value)}
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white"
-                      >
-                        {videoLengthPresets.map((preset) => (
-                          <option key={`${preset.durationSeconds}-${preset.sceneCount}`} value={`${preset.durationSeconds}-${preset.sceneCount}`}>
-                            {preset.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <SelectField label="Video Type" value={videoType} onChange={setVideoType} options={videoTypes.map((option) => ({ value: option, label: option }))} />
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Input Source</p>
-                  <div className="mt-4 grid gap-5 md:grid-cols-2">
-                    <SelectField label="Source" value={inputSource} onChange={setInputSource} options={inputSourceOptions} />
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-200">{inputSource === "url" ? "URL" : "Input Brief"}</label>
-                      <textarea
-                        value={topic}
-                        onChange={(event) => setTopic(event.target.value)}
-                        rows={4}
-                        placeholder={inputSource === "url"
-                          ? "Paste a URL to use as source context"
-                          : inputSource === "saved-idea"
-                            ? "Describe the saved idea you want to transform"
-                            : `Describe the ${inputSource} you want to turn into a production package`}
-                        className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-4 text-sm text-white placeholder:text-slate-500"
-                      />
+                <div className="mt-6 space-y-5">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Read-only inherited settings</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <InfoField label="Goal" value={activeProductionWorkspace?.sourceMetadata?.inheritedGoal || goal} />
+                      <InfoField label="Platform" value={activeProductionWorkspace?.sourceMetadata?.platform || platform} />
+                      <InfoField label="Tone" value={activeProductionWorkspace?.sourceMetadata?.inheritedTone || tone} />
+                      <InfoField label="Style" value={activeProductionWorkspace?.sourceMetadata?.inheritedStyle || storyStyle} />
                     </div>
                   </div>
-                </div>
-              </div>
 
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <InfoCard
-                  icon={<Megaphone size={18} className="text-yellow-400" />}
-                  title="Production Rules"
-                  body="No invented property facts. Every package includes a caption, CTA, hashtags, and copy-ready prompts for production."
-                />
-                <InfoCard
-                  icon={<ImagePlay size={18} className="text-yellow-400" />}
-                  title="Google Flow Ready"
-                  body="Reel prompts enforce 8-second scene caps, continuity, camera direction, motion, and no text or logos."
-                />
-              </div>
-            </>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Post draft guidance</p>
+                    <p className="mt-3 text-sm leading-7 text-slate-300">
+                      This workspace is focused on writing one professional post with one professional image prompt.
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <Clapperboard className="text-yellow-400" size={22} />
+                  <h2 className="text-2xl font-semibold">Director&apos;s Desk</h2>
+                </div>
+
+                <div className="mt-6 space-y-5">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Creative Brief</p>
+                    <div className="mt-4 grid gap-5 md:grid-cols-2">
+                      <SelectField label="Goal" value={goal} onChange={setGoal} options={goals.map((option) => ({ value: option, label: option }))} />
+                      <SelectField label="Tone" value={tone} onChange={setTone} options={["Professional", "Bold", "Friendly", "Educational"].map((option) => ({ value: option, label: option }))} />
+                      <SelectField label="Language" value={language} onChange={setLanguage} options={languages.map((option) => ({ value: option, label: option }))} />
+                      <SelectField label="Story Style" value={storyStyle} onChange={setStoryStyle} options={storyStyles.map((option) => ({ value: option, label: option }))} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Platform & Output</p>
+                    <div className="mt-4 grid gap-5 md:grid-cols-2">
+                      <SelectField label="Platform" value={platform} onChange={setPlatform} options={platforms} />
+                      <SelectField label="Content Type" value={contentType} onChange={setContentType} options={contentTypes} />
+                      <SelectField label="Presentation Style" value={presentationStyle} onChange={setPresentationStyle} options={presentationStyles.map((option) => ({ value: option, label: option }))} />
+                      <SelectField label="Production Level" value={productionLevel} onChange={setProductionLevel} options={productionLevels.map((option) => ({ value: option, label: option }))} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Video Settings</p>
+                    <div className="mt-4 grid gap-5 md:grid-cols-2">
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-200">Video Length Preset</label>
+                        <select
+                          value={`${durationSeconds}-${sceneCount}`}
+                          onChange={(event) => handleVideoLengthPresetChange(event.target.value)}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white"
+                        >
+                          {videoLengthPresets.map((preset) => (
+                            <option key={`${preset.durationSeconds}-${preset.sceneCount}`} value={`${preset.durationSeconds}-${preset.sceneCount}`}>
+                              {preset.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <SelectField label="Video Type" value={videoType} onChange={setVideoType} options={videoTypes.map((option) => ({ value: option, label: option }))} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Input Source</p>
+                    <div className="mt-4 grid gap-5 md:grid-cols-2">
+                      <SelectField label="Source" value={inputSource} onChange={setInputSource} options={inputSourceOptions} />
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-200">{inputSource === "url" ? "URL" : "Input Brief"}</label>
+                        <textarea
+                          value={topic}
+                          onChange={(event) => setTopic(event.target.value)}
+                          rows={4}
+                          placeholder={inputSource === "url"
+                            ? "Paste a URL to use as source context"
+                            : inputSource === "saved-idea"
+                              ? "Describe the saved idea you want to transform"
+                              : `Describe the ${inputSource} you want to turn into a production package`}
+                          className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-4 text-sm text-white placeholder:text-slate-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <InfoCard
+                    icon={<Megaphone size={18} className="text-yellow-400" />}
+                    title="Production Rules"
+                    body="No invented property facts. Every package includes a caption, CTA, hashtags, and copy-ready prompts for production."
+                  />
+                  <InfoCard
+                    icon={<ImagePlay size={18} className="text-yellow-400" />}
+                    title="Google Flow Ready"
+                    body="Reel prompts enforce 8-second scene caps, continuity, camera direction, motion, and no text or logos."
+                  />
+                </div>
+              </>
+            )
           ) : mode === "inspiration" ? (
             <>
               <div className="flex items-center gap-3">
@@ -1181,6 +1275,35 @@ export default function ContentStudioPage() {
               </div>
 
               <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Step 0</p>
+                <p className="mt-2 text-lg font-semibold text-white">Choose workflow first</p>
+                <p className="mt-2 text-sm text-slate-300">
+                  This selection controls the downstream idea generation path.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {ideaWorkflowOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setIdeaWorkflow(option.value);
+                        setIdeaType(mapWorkflowToIdeaType(option.value));
+                        setError(null);
+                      }}
+                      className={`rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                        ideaWorkflow === option.value
+                          ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-100"
+                          : "border-slate-700 bg-slate-900/60 text-slate-200 hover:border-yellow-500/30"
+                      }`}
+                    >
+                      <p>{option.label}</p>
+                      <p className="mt-2 text-xs font-normal text-slate-300">{option.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
                 <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Step 1</p>
                 <p className="mt-2 text-lg font-semibold text-white">Choose inspiration source</p>
 
@@ -1257,22 +1380,11 @@ export default function ContentStudioPage() {
 
               <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
                 <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Step 2</p>
-                <p className="mt-2 text-lg font-semibold text-white">Choose idea type</p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {ideaTypeOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setIdeaType(option.value)}
-                      className={`rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                        ideaType === option.value
-                          ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-100"
-                          : "border-slate-700 bg-slate-900/60 text-slate-200 hover:border-yellow-500/30"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                <p className="mt-2 text-lg font-semibold text-white">Workflow confirmation</p>
+                <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-200">
+                  {ideaWorkflow
+                    ? `Active workflow: ${getIdeaWorkflowLabel(ideaWorkflow)} (${getIdeaTypeLabel(selectedIdeaType)} generation mode).`
+                    : "Select a workflow in Step 0 before exploring ideas."}
                 </div>
               </div>
 
@@ -1300,13 +1412,13 @@ export default function ContentStudioPage() {
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <InfoCard
                   icon={<Lightbulb size={18} className="text-yellow-400" />}
-                  title="Step 3"
-                  body="Click Explore Ideas to get 10 easy-to-scan cards."
+                  title="Step 4"
+                  body="Click Explore Ideas to get 10 easy-to-scan cards for the selected workflow."
                 />
                 <InfoCard
                   icon={<Megaphone size={18} className="text-yellow-400" />}
                   title="Then"
-                  body="Use Explore on any card to fill Production Studio instantly."
+                  body="Use Explore on any card to open the right workspace instantly."
                 />
               </div>
             </>
@@ -1347,14 +1459,14 @@ export default function ContentStudioPage() {
                 className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-yellow-500 px-6 py-4 text-base font-semibold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Sparkles size={20} />
-                {generating ? "Generating..." : "Generate Production Package"}
+                {generating ? "Generating..." : isNormalPostWorkspaceActive ? "Generate Post" : "Generate Production Package"}
               </button>
             ) : mode === "inspiration" ? (
               <>
                 <button
                   type="button"
                   onClick={generateIdeas}
-                  disabled={generating}
+                  disabled={generating || !ideaWorkflow}
                   className="inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-5 py-3 font-semibold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Sparkles size={18} />
@@ -1397,33 +1509,46 @@ export default function ContentStudioPage() {
             <div>
               <div className="flex items-center gap-3">
                 {mode === "create-content" ? (
-                  <FileVideo className="text-yellow-400" size={22} />
+                  isNormalPostWorkspaceActive ? <ClipboardList className="text-yellow-400" size={22} /> : <FileVideo className="text-yellow-400" size={22} />
                 ) : mode === "inspiration" ? (
                   <Lightbulb className="text-yellow-400" size={22} />
                 ) : (
                   <FolderClock className="text-yellow-400" size={22} />
                 )}
                 <h2 className="text-2xl font-semibold">
-                  {mode === "create-content" ? "Production Package" : mode === "inspiration" ? "Idea Explorer" : "Saved Items"}
+                  {mode === "create-content"
+                    ? isNormalPostWorkspaceActive ? "Post Draft" : "Production Package"
+                    : mode === "inspiration" ? "Idea Explorer" : "Saved Items"}
                 </h2>
               </div>
               {mode === "create-content" ? (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <StatusBadge label="Production Package" tone="gold" />
-                  <StatusBadge label="Google Flow Ready" tone="slate" />
-                  <StatusBadge label="8 sec max" tone="slate" />
+                  {isNormalPostWorkspaceActive ? (
+                    <>
+                      <StatusBadge label="Post Workspace" tone="gold" />
+                      <StatusBadge label="Single Image Prompt" tone="slate" />
+                    </>
+                  ) : (
+                    <>
+                      <StatusBadge label="Production Package" tone="gold" />
+                      <StatusBadge label="Google Flow Ready" tone="slate" />
+                      <StatusBadge label="8 sec max" tone="slate" />
+                    </>
+                  )}
                 </div>
               ) : null}
               <p className="mt-3 text-sm text-slate-400">
                 {mode === "create-content"
-                  ? "Output is structured for direct copy, Google Flow prompt generation, and production handoff."
+                  ? isNormalPostWorkspaceActive
+                    ? "Post draft workspace with locked content settings and a single professional image prompt."
+                    : "Output is structured for direct copy, Google Flow prompt generation, and production handoff."
                   : mode === "inspiration"
-                    ? "Simple flow: add topic or screenshot, choose a goal, explore ideas, then open one in Production Studio."
+                    ? "Simple flow: add topic or screenshot, choose a goal, explore ideas, then open the right workspace."
                     : "Review saved idea cards and generated production packages stored in this browser."}
               </p>
             </div>
 
-            {mode === "create-content" ? (
+            {mode === "create-content" && !isNormalPostWorkspaceActive ? (
               <button
                 type="button"
                 onClick={copyOutput}
@@ -1446,7 +1571,9 @@ export default function ContentStudioPage() {
               </div>
             ) : !generatedPackage ? (
               <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-                Set up the Director&apos;s Desk on the left, then generate a complete production package.
+                {isNormalPostWorkspaceActive
+                  ? "Use Idea Explorer to select an idea, then continue editing your post draft in Post Workspace."
+                  : "Set up the Director&apos;s Desk on the left, then generate a complete production package."}
               </div>
             ) : showingStructuredPackage ? (
               <div className="mt-6 space-y-5">
@@ -1726,7 +1853,7 @@ export default function ContentStudioPage() {
             ) : (
               <div className="mt-6 space-y-4">
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm text-slate-300">
-                  Showing ideas {ideaPageIndex * 10 + 1}-{ideaPageIndex * 10 + visibleIdeas.length} | Goal: {getGoalLabel(ideaGoal)} | Type: {getIdeaTypeLabel(ideaType)}
+                  Showing ideas {ideaPageIndex * 10 + 1}-{ideaPageIndex * 10 + visibleIdeas.length} | Goal: {getGoalLabel(ideaGoal)} | Workflow: {ideaWorkflow ? getIdeaWorkflowLabel(ideaWorkflow) : "Not selected"} | Type: {getIdeaTypeLabel(selectedIdeaType)}
                 </div>
 
                 <div className="grid gap-4">
@@ -1770,7 +1897,7 @@ export default function ContentStudioPage() {
                     </div>
 
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <IdeaField label="Idea type" value={idea.ideaType ? getIdeaTypeLabel(idea.ideaType) : getIdeaTypeLabel(ideaType)} />
+                      <IdeaField label="Idea type" value={idea.ideaType ? getIdeaTypeLabel(idea.ideaType) : getIdeaTypeLabel(selectedIdeaType)} />
                       <IdeaField label="Best format" value={idea.bestFormat || "Normal Post"} />
                       <IdeaField label="Potential score" value={`${idea.potentialScore ?? 70}/100`} />
                       <IdeaField label="Difficulty" value={idea.difficulty || "Medium"} />
@@ -1871,6 +1998,15 @@ function SelectField({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function InfoField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3">
+      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</p>
+      <p className="mt-2 text-sm font-medium text-slate-100">{value}</p>
     </div>
   );
 }
