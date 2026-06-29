@@ -546,10 +546,10 @@ export default function ContentStudioPage() {
       presentationStyle,
       duration: contentType === "reel-video" ? durationSeconds : null,
       productionLevel,
-      shootingEnvironment: videoType,
+      shootingEnvironment: "ai_generated",
       equipment: [],
     }),
-    [contentType, platform, topic, tone, language, goal, storyStyle, presentationStyle, durationSeconds, productionLevel, videoType],
+    [contentType, platform, topic, tone, language, goal, storyStyle, presentationStyle, durationSeconds, productionLevel],
   );
 
   const inspirationPayload = useMemo(

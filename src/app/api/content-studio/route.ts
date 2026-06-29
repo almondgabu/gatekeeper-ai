@@ -51,22 +51,6 @@ const allowedPresentationStyles = new Set([
   "interview",
 ]);
 const allowedProductionLevels = new Set(["quick", "professional", "premium"]);
-const allowedShootingEnvironments = new Set([
-  "on-site-property",
-  "outdoor-location",
-  "interior-space",
-  "office-studio",
-  "mixed-environment",
-]);
-const allowedEquipment = new Set([
-  "phone",
-  "drone",
-  "gimbal",
-  "tripod",
-  "nd-filter",
-  "lavalier-mic",
-  "mirrorless-camera",
-]);
 const allowedDurations = new Set([8, 16, 24, 32, 40, 48, 56, 64]);
 const allowedGoals = new Set([
   "engagement",
@@ -744,7 +728,7 @@ ${additionalUserContext}
     const storyStyle = normalizeSlug(body?.storyStyle);
     const presentationStyle = normalizeSlug(body?.presentationStyle);
     const productionLevel = normalizeSlug(body?.productionLevel);
-    const shootingEnvironment = normalizeSlug(body?.shootingEnvironment);
+    const shootingEnvironment = normalizeSlug(body?.shootingEnvironment) || "ai_generated";
     const rawEquipment: unknown[] = Array.isArray(body?.equipment) ? body.equipment : [];
     const equipment = rawEquipment
       .map((item) => normalizeSlug(item))
@@ -795,20 +779,12 @@ ${additionalUserContext}
       return NextResponse.json({ error: "Invalid productionLevel" }, { status: 400 });
     }
 
-    if (!allowedShootingEnvironments.has(shootingEnvironment)) {
-      return NextResponse.json({ error: "Invalid shootingEnvironment" }, { status: 400 });
-    }
-
-    if (!equipment.every((item) => allowedEquipment.has(item))) {
-      return NextResponse.json({ error: "Invalid equipment" }, { status: 400 });
-    }
-
     if (contentType === "reel-video" && (duration === null || !allowedDurations.has(duration))) {
       return NextResponse.json({ error: "Invalid duration" }, { status: 400 });
     }
 
     const sceneCount = contentType === "reel-video" && duration ? Math.ceil(duration / 8) : 1;
-    const equipmentList = equipment.length > 0 ? equipment.map(formatTitleCase).join(", ") : "Phone, Gimbal";
+    const equipmentList = equipment.length > 0 ? equipment.map(formatTitleCase).join(", ") : "None";
     const sabahRepresentationRules = shouldApplySabahRepresentationRules(topic)
       ? `
 Sabah local representation rules (apply for all visuals, scenes, and prompts):
@@ -847,15 +823,17 @@ Brand rules:
 Production rules:
 - Output mode is always Production Package.
 - Content type can be Normal Post or Reel / Video.
-- Every Normal Post must include content-ready caption, one image prompt, one optional motion-friendly video prompt, CTA, and hashtags.
+- Focus on AI-generated content production. Do not rely on real filming setup assumptions.
+- Every Normal Post must include content-ready caption, exactly one creative professional AI image prompt, one optional motion-friendly AI video prompt, CTA, and hashtags.
 - For Normal Post, create exactly 1 storyboard item and exactly 1 scene card focused on the hero visual.
 - If content type is Reel / Video, create exactly ${sceneCount} scenes.
 - Every Reel / Video scene must be no more than 8 seconds.
+- For Reel / Video, each scene must include a scene-based AI image prompt and AI video prompt.
 - Every video prompt must explicitly include the scene duration.
 - Every video prompt must be optimized for Google Flow and must include character consistency, clothing consistency, environment consistency, lighting consistency, camera movement, subject movement, environmental motion, smooth transition, no subtitles, no text, and no logos.
 - Use only one thumbnail placeholder per scene. Do not duplicate the thumbnail inside the image prompt.
 - Storyboard must contain scene summary only.
-- Production checklist must reflect the selected equipment and likely setup needs.
+- Production checklist should focus on AI workflow and prompt quality checks.
 
 Output requirements:
 - Return exactly one JSON object.
@@ -925,8 +903,8 @@ Request:
 - Presentation Style: ${presentationStyle}
 - Duration: ${duration ? `${duration} seconds` : "Not applicable"}
 - Production Level: ${productionLevel}
-- Shooting Environment: ${shootingEnvironment}
-- Selected Equipment: ${equipmentList}
+- Generation Environment: ${shootingEnvironment}
+- Selected Equipment: ${equipmentList} (optional, ignored for validation)
 `,
     });
 
