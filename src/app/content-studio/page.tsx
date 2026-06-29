@@ -146,23 +146,26 @@ const presentationStyles = [
   "Voice-over",
   "Interview",
 ];
-const durationOptions = [8, 16, 24, 32, 40, 48, 56, 64];
 const productionLevels = ["Quick", "Professional", "Premium"];
-const shootingEnvironments = [
-  "On-Site Property",
-  "Outdoor Location",
-  "Interior Space",
-  "Office / Studio",
-  "Mixed Environment",
+const videoLengthPresets = [
+  { durationSeconds: 24, sceneCount: 3, label: "24 seconds (3 scenes)" },
+  { durationSeconds: 32, sceneCount: 4, label: "32 seconds (4 scenes)" },
+  { durationSeconds: 40, sceneCount: 5, label: "40 seconds (5 scenes)" },
+  { durationSeconds: 48, sceneCount: 6, label: "48 seconds (6 scenes)" },
+  { durationSeconds: 56, sceneCount: 7, label: "56 seconds (7 scenes)" },
+  { durationSeconds: 64, sceneCount: 8, label: "64 seconds (8 scenes)" },
+  { durationSeconds: 72, sceneCount: 9, label: "72 seconds (9 scenes)" },
+  { durationSeconds: 80, sceneCount: 10, label: "80 seconds (10 scenes)" },
+  { durationSeconds: 88, sceneCount: 11, label: "88 seconds (11 scenes)" },
+  { durationSeconds: 96, sceneCount: 12, label: "96 seconds (12 scenes)" },
 ];
-const equipmentOptions = [
-  "Phone",
-  "Drone",
-  "Gimbal",
-  "Tripod",
-  "ND Filter",
-  "Lavalier Mic",
-  "Mirrorless Camera",
+const videoTypes = ["AI Video", "Dialogue", "Storytelling", "Documentary", "Explainer", "Educational"];
+const inputSourceOptions = [
+  { value: "topic", label: "Topic" },
+  { value: "screenshot", label: "Screenshot" },
+  { value: "image", label: "Image" },
+  { value: "saved-idea", label: "Saved Idea" },
+  { value: "url", label: "URL" },
 ];
 const ideaExplorerGoals = [
   { value: "build-authority", label: "Build Authority" },
@@ -445,10 +448,11 @@ export default function ContentStudioPage() {
   const [goal, setGoal] = useState("Engagement");
   const [storyStyle, setStoryStyle] = useState("Educational");
   const [presentationStyle, setPresentationStyle] = useState("Narration");
-  const [duration, setDuration] = useState("40");
+  const [durationSeconds, setDurationSeconds] = useState(40);
+  const [sceneCount, setSceneCount] = useState(5);
   const [productionLevel, setProductionLevel] = useState("Professional");
-  const [shootingEnvironment, setShootingEnvironment] = useState("On-Site Property");
-  const [equipment, setEquipment] = useState<string[]>(["Phone", "Gimbal"]);
+  const [videoType, setVideoType] = useState("AI Video");
+  const [inputSource, setInputSource] = useState("topic");
   const [ideaSourceType, setIdeaSourceType] = useState<"topic" | "image">("topic");
   const [ideaTopic, setIdeaTopic] = useState("");
   const [ideaContext, setIdeaContext] = useState("");
@@ -529,12 +533,12 @@ export default function ContentStudioPage() {
       goal,
       storyStyle,
       presentationStyle,
-      duration: contentType === "reel-video" ? Number(duration) : null,
+      duration: contentType === "reel-video" ? durationSeconds : null,
       productionLevel,
-      shootingEnvironment,
-      equipment,
+      shootingEnvironment: videoType,
+      equipment: [],
     }),
-    [contentType, platform, topic, tone, language, goal, storyStyle, presentationStyle, duration, productionLevel, shootingEnvironment, equipment],
+    [contentType, platform, topic, tone, language, goal, storyStyle, presentationStyle, durationSeconds, productionLevel, videoType],
   );
 
   const inspirationPayload = useMemo(
@@ -879,10 +883,10 @@ export default function ContentStudioPage() {
           goal,
           storyStyle,
           presentationStyle,
-          duration,
+          duration: String(durationSeconds),
           productionLevel,
-          shootingEnvironment,
-          equipment,
+          shootingEnvironment: videoType,
+          equipment: [],
         },
       },
       ...savedItems,
@@ -932,10 +936,12 @@ export default function ContentStudioPage() {
       setGoal(item.context?.goal ?? "Engagement");
       setStoryStyle(item.context?.storyStyle ?? "Educational");
       setPresentationStyle(item.context?.presentationStyle ?? "Narration");
-      setDuration(item.context?.duration ?? "40");
+      const loadedDuration = Number(item.context?.duration ?? "40");
+      const safeDuration = Number.isFinite(loadedDuration) ? loadedDuration : 40;
+      setDurationSeconds(safeDuration);
+      setSceneCount(Math.max(3, Math.min(12, Math.round(safeDuration / 8))));
       setProductionLevel(item.context?.productionLevel ?? "Professional");
-      setShootingEnvironment(item.context?.shootingEnvironment ?? "On-Site Property");
-      setEquipment(item.context?.equipment ?? ["Phone", "Gimbal"]);
+      setVideoType(item.context?.shootingEnvironment ?? "AI Video");
       setError(null);
       return;
     }
@@ -984,10 +990,17 @@ export default function ContentStudioPage() {
     return idea.summary || legacyAngle;
   }
 
-  function toggleEquipment(item: string) {
-    setEquipment((current) => current.includes(item)
-      ? current.filter((entry) => entry !== item)
-      : [...current, item]);
+  function handleVideoLengthPresetChange(value: string) {
+    const preset = videoLengthPresets.find(
+      (option) => `${option.durationSeconds}-${option.sceneCount}` === value,
+    );
+
+    if (!preset) {
+      return;
+    }
+
+    setDurationSeconds(preset.durationSeconds);
+    setSceneCount(preset.sceneCount);
   }
 
   const showingStructuredPackage = Boolean(generatedPackage && hasProductionStudioStructure(generatedPackage));
@@ -1031,59 +1044,67 @@ export default function ContentStudioPage() {
                 <h2 className="text-2xl font-semibold">Director&apos;s Desk</h2>
               </div>
 
-              <div className="mt-6 grid gap-5 md:grid-cols-2">
-                <SelectField label="Platform" value={platform} onChange={setPlatform} options={platforms} />
-                <SelectField label="Content Type" value={contentType} onChange={setContentType} options={contentTypes} />
-                <SelectField label="Goal" value={goal} onChange={setGoal} options={goals.map((option) => ({ value: option, label: option }))} />
-                <SelectField label="Language" value={language} onChange={setLanguage} options={languages.map((option) => ({ value: option, label: option }))} />
-                <SelectField label="Story Style" value={storyStyle} onChange={setStoryStyle} options={storyStyles.map((option) => ({ value: option, label: option }))} />
-                <SelectField label="Presentation Style" value={presentationStyle} onChange={setPresentationStyle} options={presentationStyles.map((option) => ({ value: option, label: option }))} />
+              <div className="mt-6 space-y-5">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Creative Brief</p>
+                  <div className="mt-4 grid gap-5 md:grid-cols-2">
+                    <SelectField label="Goal" value={goal} onChange={setGoal} options={goals.map((option) => ({ value: option, label: option }))} />
+                    <SelectField label="Tone" value={tone} onChange={setTone} options={["Professional", "Bold", "Friendly", "Educational"].map((option) => ({ value: option, label: option }))} />
+                    <SelectField label="Language" value={language} onChange={setLanguage} options={languages.map((option) => ({ value: option, label: option }))} />
+                    <SelectField label="Story Style" value={storyStyle} onChange={setStoryStyle} options={storyStyles.map((option) => ({ value: option, label: option }))} />
+                  </div>
+                </div>
 
-                {contentType === "reel-video" ? (
-                  <SelectField
-                    label="Duration"
-                    value={duration}
-                    onChange={setDuration}
-                    options={durationOptions.map((option) => ({ value: String(option), label: `${option} sec` }))}
-                  />
-                ) : null}
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Platform & Output</p>
+                  <div className="mt-4 grid gap-5 md:grid-cols-2">
+                    <SelectField label="Platform" value={platform} onChange={setPlatform} options={platforms} />
+                    <SelectField label="Content Type" value={contentType} onChange={setContentType} options={contentTypes} />
+                    <SelectField label="Presentation Style" value={presentationStyle} onChange={setPresentationStyle} options={presentationStyles.map((option) => ({ value: option, label: option }))} />
+                    <SelectField label="Production Level" value={productionLevel} onChange={setProductionLevel} options={productionLevels.map((option) => ({ value: option, label: option }))} />
+                  </div>
+                </div>
 
-                <SelectField label="Production Level" value={productionLevel} onChange={setProductionLevel} options={productionLevels.map((option) => ({ value: option, label: option }))} />
-                <SelectField label="Shooting Environment" value={shootingEnvironment} onChange={setShootingEnvironment} options={shootingEnvironments.map((option) => ({ value: option, label: option }))} />
-              </div>
-
-              <div className="mt-5">
-                <label className="mb-2 block text-sm font-medium text-slate-200">Topic</label>
-                <textarea
-                  value={topic}
-                  onChange={(event) => setTopic(event.target.value)}
-                  rows={5}
-                  placeholder="Example: 40-second documentary reel explaining why serious land buyers should verify title status before making an offer."
-                  className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-4 text-sm text-white placeholder:text-slate-500"
-                />
-              </div>
-
-              <div className="mt-5">
-                <label className="mb-3 block text-sm font-medium text-slate-200">Equipment</label>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {equipmentOptions.map((item) => {
-                    const checked = equipment.includes(item);
-
-                    return (
-                      <label
-                        key={item}
-                        className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${checked ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-100" : "border-slate-700 bg-slate-950 text-slate-200 hover:border-yellow-500/30"}`}
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Video Settings</p>
+                  <div className="mt-4 grid gap-5 md:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-200">Video Length Preset</label>
+                      <select
+                        value={`${durationSeconds}-${sceneCount}`}
+                        onChange={(event) => handleVideoLengthPresetChange(event.target.value)}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white"
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleEquipment(item)}
-                          className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-yellow-500"
-                        />
-                        <span>{item}</span>
-                      </label>
-                    );
-                  })}
+                        {videoLengthPresets.map((preset) => (
+                          <option key={`${preset.durationSeconds}-${preset.sceneCount}`} value={`${preset.durationSeconds}-${preset.sceneCount}`}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <SelectField label="Video Type" value={videoType} onChange={setVideoType} options={videoTypes.map((option) => ({ value: option, label: option }))} />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Input Source</p>
+                  <div className="mt-4 grid gap-5 md:grid-cols-2">
+                    <SelectField label="Source" value={inputSource} onChange={setInputSource} options={inputSourceOptions} />
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-200">{inputSource === "url" ? "URL" : "Input Brief"}</label>
+                      <textarea
+                        value={topic}
+                        onChange={(event) => setTopic(event.target.value)}
+                        rows={4}
+                        placeholder={inputSource === "url"
+                          ? "Paste a URL to use as source context"
+                          : inputSource === "saved-idea"
+                            ? "Describe the saved idea you want to transform"
+                            : `Describe the ${inputSource} you want to turn into a production package`}
+                        className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-4 text-sm text-white placeholder:text-slate-500"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1246,37 +1267,15 @@ export default function ContentStudioPage() {
 
           <div className="mt-6 flex flex-wrap gap-3">
             {mode === "create-content" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={generateContent}
-                  disabled={generating}
-                  className="inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-5 py-3 font-semibold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Sparkles size={18} />
-                  {generating ? "Generating..." : "Generate Production Package"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={generateContent}
-                  disabled={generating || !generatedPackage}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <RefreshCw size={18} className={generating ? "animate-spin" : undefined} />
-                  Regenerate
-                </button>
-
-                <button
-                  type="button"
-                  onClick={savePackage}
-                  disabled={!generatedPackage}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <FolderClock size={18} />
-                  Save Production Package
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={generateContent}
+                disabled={generating}
+                className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-yellow-500 px-6 py-4 text-base font-semibold text-slate-950 transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Sparkles size={20} />
+                {generating ? "Generating..." : "Generate Production Package"}
+              </button>
             ) : mode === "inspiration" ? (
               <>
                 <button
