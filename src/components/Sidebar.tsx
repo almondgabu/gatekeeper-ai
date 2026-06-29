@@ -25,6 +25,7 @@ const menuItems = [
   { name: "Projects", href: "/projects", icon: FolderKanban },
   { name: "Opportunities", href: "/opportunities", icon: Target },
   { name: "Knowledge Vault", href: "/vault", icon: Library },
+  // TODO (Phase 1.1): Add "NEW" badge beside AI Idea Explorer navigation item.
   { name: "AI Idea Explorer", href: "/content-studio", icon: Clapperboard },
   { name: "User Guide", href: "/guide", icon: BookOpen },
   { name: "Settings", href: "/settings", icon: Settings },
