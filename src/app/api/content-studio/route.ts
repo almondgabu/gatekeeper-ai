@@ -644,6 +644,21 @@ export async function POST(request: Request) {
         : "User uploaded a screenshot/image as the inspiration source. Infer practical context only from visible clues.";
       const selectedIdeaTypeLabel = ideaType === "short_video" ? "Short Video" : "Normal Post";
       const selectedBestFormat = ideaType === "short_video" ? "Reel / Video" : "Normal Post";
+      const ideaTypeRules = ideaType === "short_video"
+        ? [
+            "Short Video mode:",
+            "- Ideas can include scene-based storytelling and motion-friendly concepts.",
+            "- animationPrompt is allowed and should be practical for AI video generation.",
+            "- bestFormat must be \"Reel / Video\".",
+          ].join("\n")
+        : [
+            "Normal Post mode:",
+            "- Generate post-focused ideas only.",
+            "- Do not include scene breakdowns.",
+            "- Do not include video prompts or animation concepts.",
+            "- Visual output should focus on one creative professional photo/image concept.",
+            "- bestFormat must be \"Normal Post\".",
+          ].join("\n");
       const additionalUserContext = context
         ? `\nAdditional user context:\n${context}\n\nUse this context to understand the image/topic better and generate ideas that are more relevant, practical, and targeted.`
         : "";
@@ -661,6 +676,7 @@ Rules:
 - Do not number titles.
 - Generate ideas only for this selected type: ${selectedIdeaTypeLabel}.
 - Every idea must use bestFormat exactly "${selectedBestFormat}".
+${ideaTypeRules}
 - ${exclusionRule || "Do not produce near-duplicate ideas in the same batch."}
 
 Return exactly one JSON object in this shape:
