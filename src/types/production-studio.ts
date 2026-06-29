@@ -153,6 +153,24 @@ export interface ProductionWorkspaceProject {
     tokensUsed?: number;
     generationTime?: number;
   };
+
+  /** Source idea metadata (preserved from InspirationIdea) */
+  sourceMetadata?: {
+    hook?: string;
+    coreConcept?: string;
+    whyThisWorks?: string;
+    emotion?: string;
+    platform?: string;
+    estimatedReach?: number;
+    engagementPotential?: number;
+    difficulty?: "Easy" | "Medium" | "Advanced";
+    productionTime?: string;
+    suggestedCTA?: string;
+    thumbnailPrompt?: string;
+    keyVisualPrompt?: string;
+    animationPrompt?: string;
+    confidenceScore?: number;
+  };
 }
 
 /**

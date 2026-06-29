@@ -2,16 +2,25 @@ import { ProductionWorkspaceProject, ProductionContentType, ProductionStatus } f
 
 /**
  * Inspiration idea type from the AI Idea Explorer
- * Based on the type definition in src/app/content-studio/page.tsx
+ * Based on the type definition in src/app/api/content-studio/route.ts
  */
 type InspirationIdea = {
   title: string;
-  summary: string;
-  bestFormat: "Normal Post" | "Reel / Video";
-  potentialScore: number;
+  hook: string;
+  coreConcept: string;
+  targetAudience: string;
+  emotion: string;
+  platform: string;
+  estimatedReach: number;
+  engagementPotential: number;
   difficulty: "Easy" | "Medium" | "Advanced";
-  estimatedProductionTime: string;
-  whyThisIdea: string;
+  productionTime: string;
+  suggestedCTA: string;
+  thumbnailPrompt: string;
+  keyVisualPrompt: string;
+  animationPrompt?: string;
+  confidenceScore: number;
+  whyThisWorks: string;
 };
 
 /**
@@ -34,23 +43,10 @@ export function createWorkspaceFromIdea(
 ): ProductionWorkspaceProject {
   const now = new Date().toISOString();
   
-  // Map best format to content type
-  const contentType: ProductionContentType = mapBestFormatToContentType(idea.bestFormat);
-  
-  // Generate target audience from idea summary
-  const targetAudience = extractTargetAudience(idea.summary);
-  
-  // Generate brand voice from difficulty and potential score
-  const brandVoice = generateBrandVoice(idea.difficulty, idea.potentialScore);
-  
-  // Extract key messages from summary
-  const keyMessages = extractKeyMessages(idea.summary);
-  
-  // Generate SEO keywords from title and summary
-  const seoKeywords = generateSeoKeywords(idea.title, idea.summary);
-  
-  // Estimate word count from estimated production time
-  const targetWordCount = estimateWordCount(idea.estimatedProductionTime);
+  // Map productionTime to content type (simplified mapping)
+  const contentType: ProductionContentType = idea.platform?.toLowerCase().includes("video") 
+    ? "video_script" 
+    : "social_media_post";
   
   // Create the production workspace project
   const project: ProductionWorkspaceProject = {
@@ -59,7 +55,7 @@ export function createWorkspaceFromIdea(
     
     // Copy source fields
     name: idea.title,
-    description: idea.summary,
+    description: `${idea.hook} ${idea.coreConcept}`.trim(),
     contentType,
     
     // Set status to draft
@@ -69,15 +65,15 @@ export function createWorkspaceFromIdea(
     ownerId: "current-user",
     
     // Target audience and brand voice
-    targetAudience,
-    brandVoice,
+    targetAudience: idea.targetAudience || "General audience",
+    brandVoice: generateBrandVoice(idea.difficulty, idea.confidenceScore),
     
     // Key messages and SEO
-    keyMessages,
-    seoKeywords,
+    keyMessages: extractKeyMessages(idea.coreConcept),
+    seoKeywords: generateSeoKeywords(idea.title, idea.coreConcept),
     
     // Word count target
-    targetWordCount,
+    targetWordCount: estimateWordCount(idea.productionTime),
     
     // Timestamps
     createdAt: now,
@@ -98,6 +94,24 @@ export function createWorkspaceFromIdea(
     // Initialize empty references
     references: [],
     
+    // Preserve source metadata from inspiration idea
+    sourceMetadata: {
+      hook: idea.hook,
+      coreConcept: idea.coreConcept,
+      whyThisWorks: idea.whyThisWorks,
+      emotion: idea.emotion,
+      platform: idea.platform,
+      estimatedReach: idea.estimatedReach,
+      engagementPotential: idea.engagementPotential,
+      difficulty: idea.difficulty,
+      productionTime: idea.productionTime,
+      suggestedCTA: idea.suggestedCTA,
+      thumbnailPrompt: idea.thumbnailPrompt,
+      keyVisualPrompt: idea.keyVisualPrompt,
+      animationPrompt: idea.animationPrompt,
+      confidenceScore: idea.confidenceScore,
+    },
+    
     // Optional fields
     associatedProjectId: undefined,
     deadline: undefined,
@@ -111,49 +125,10 @@ export function createWorkspaceFromIdea(
 }
 
 /**
- * Maps AI Idea Explorer best format to Production Studio content type
+ * Generates brand voice based on difficulty and confidence score
  */
-function mapBestFormatToContentType(bestFormat: "Normal Post" | "Reel / Video"): ProductionContentType {
-  switch (bestFormat) {
-    case "Reel / Video":
-      return "video_script";
-    case "Normal Post":
-    default:
-      return "social_media_post";
-  }
-}
-
-/**
- * Extracts target audience from idea summary
- * Uses simple keyword matching for common audience types
- */
-function extractTargetAudience(summary: string): string {
-  const summaryLower = summary.toLowerCase();
-  
-  if (summaryLower.includes("investor") || summaryLower.includes("investment")) {
-    return "Real estate investors and property developers";
-  } else if (summaryLower.includes("buyer") || summaryLower.includes("purchase")) {
-    return "Property buyers and home seekers";
-  } else if (summaryLower.includes("seller") || summaryLower.includes("list")) {
-    return "Property sellers and landowners";
-  } else if (summaryLower.includes("agent") || summaryLower.includes("broker")) {
-    return "Real estate agents and brokers";
-  } else if (summaryLower.includes("tourist") || summaryLower.includes("travel")) {
-    return "Tourists and travel enthusiasts";
-  } else if (summaryLower.includes("student") || summaryLower.includes("learn")) {
-    return "Students and learners";
-  } else if (summaryLower.includes("business") || summaryLower.includes("entrepreneur")) {
-    return "Business owners and entrepreneurs";
-  } else {
-    return "General audience interested in Borneo real estate";
-  }
-}
-
-/**
- * Generates brand voice based on difficulty and potential score
- */
-function generateBrandVoice(difficulty: "Easy" | "Medium" | "Advanced", potentialScore: number): string {
-  const scoreAdjective = potentialScore >= 80 ? "high-impact" : potentialScore >= 60 ? "balanced" : "approachable";
+function generateBrandVoice(difficulty: "Easy" | "Medium" | "Advanced", confidenceScore: number): string {
+  const scoreAdjective = confidenceScore >= 80 ? "high-impact" : confidenceScore >= 60 ? "balanced" : "approachable";
   
   switch (difficulty) {
     case "Easy":
@@ -168,11 +143,11 @@ function generateBrandVoice(difficulty: "Easy" | "Medium" | "Advanced", potentia
 }
 
 /**
- * Extracts key messages from idea summary
- * Splits summary into sentences and takes first 3 meaningful ones
+ * Extracts key messages from core concept
+ * Splits into sentences and takes first 3 meaningful ones
  */
-function extractKeyMessages(summary: string): string[] {
-  const sentences = summary
+function extractKeyMessages(coreConcept: string): string[] {
+  const sentences = coreConcept
     .split(/[.!?]+/)
     .map(s => s.trim())
     .filter(s => s.length > 10);
@@ -193,12 +168,11 @@ function extractKeyMessages(summary: string): string[] {
 }
 
 /**
- * Generates SEO keywords from title and summary
+ * Generates SEO keywords from title and core concept
  * Extracts important words and adds real estate related terms
  */
-function generateSeoKeywords(title: string, summary: string): string[] {
-  const combinedText = `${title} ${summary}`.toLowerCase();
-  const words = combinedText.split(/\s+/);
+function generateSeoKeywords(title: string, coreConcept: string): string[] {
+  const combinedText = `${title} ${coreConcept}`.toLowerCase();
   
   // Common real estate keywords to look for
   const realEstateKeywords = [
@@ -222,10 +196,10 @@ function generateSeoKeywords(title: string, summary: string): string[] {
 }
 
 /**
- * Estimates word count based on estimated production time
+ * Estimates word count based on production time
  */
-function estimateWordCount(estimatedProductionTime: string): number {
-  const timeLower = estimatedProductionTime.toLowerCase();
+function estimateWordCount(productionTime: string): number {
+  const timeLower = productionTime.toLowerCase();
   
   if (timeLower.includes("quick") || timeLower.includes("short") || timeLower.includes("5") || timeLower.includes("10")) {
     return 300; // Short content
