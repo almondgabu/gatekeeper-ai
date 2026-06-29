@@ -614,7 +614,7 @@ export async function POST(request: Request) {
 
     if (mode === "inspiration" || mode === "inspiration-refresh") {
       const sourceType = normalizeText(body?.sourceType).toLowerCase();
-      const ideaType = normalizeText(body?.ideaType).toLowerCase();
+      const ideaType = normalizeText(body?.ideaType).toLowerCase() || "social_post";
       const goal = normalizeText(body?.goal).toLowerCase().replace(/\s+/g, "-");
       const ideaCount = Number(body?.ideaCount ?? (mode === "inspiration-refresh" ? 1 : 10));
       const topic = normalizeText(body?.topic);

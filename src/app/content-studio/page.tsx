@@ -645,6 +645,7 @@ export default function ContentStudioPage() {
       const endpoint = "/api/content-studio";
       let responseStatus: number | null = null;
       let responseBody: string | null = null;
+      let responseJson: unknown = null;
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -654,26 +655,47 @@ export default function ContentStudioPage() {
       });
 
       responseStatus = response.status;
+      responseBody = await response.text().catch(() => "");
+
+      if (responseBody) {
+        try {
+          responseJson = JSON.parse(responseBody);
+        } catch {
+          responseJson = null;
+        }
+      }
 
       if (!response.ok) {
-        responseBody = await response.text().catch(() => "");
-        const serverMessage = responseBody?.trim() || "No response body.";
+        const serverMessage = typeof (responseJson as { error?: unknown } | null)?.error === "string"
+          ? (responseJson as { error: string }).error
+          : responseBody?.trim() || "No response body.";
         const error = new Error(`Idea Explorer request failed ${response.status}: ${serverMessage}`) as Error & {
           responseStatus?: number;
           responseBody?: string;
+          responseJson?: unknown;
         };
         error.responseStatus = responseStatus;
         error.responseBody = responseBody;
+        error.responseJson = responseJson;
         throw error;
       }
 
-      const result = await response.json().catch(() => null);
+      const result = responseJson;
 
       if (!result || typeof result !== "object") {
-        throw new Error("Invalid API response from /api/content-studio.");
+        const error = new Error("Invalid API response from /api/content-studio.") as Error & {
+          responseStatus?: number;
+          responseBody?: string;
+          responseJson?: unknown;
+        };
+        error.responseStatus = responseStatus;
+        error.responseBody = responseBody;
+        error.responseJson = responseJson;
+        throw error;
       }
 
-      const nextIdeas = Array.isArray(result.ideas) ? (result.ideas as InspirationIdea[]) : [];
+      const resultRecord = result as { ideas?: unknown };
+      const nextIdeas = Array.isArray(resultRecord.ideas) ? (resultRecord.ideas as InspirationIdea[]) : [];
       setIdeaPages(nextIdeas.length > 0 ? [nextIdeas] : []);
       setIdeaPageIndex(0);
     } catch (generationError: any) {
@@ -685,6 +707,7 @@ export default function ContentStudioPage() {
         errorStack: generationError?.stack,
         responseStatus: generationError?.responseStatus ?? null,
         responseBody: generationError?.responseBody ?? null,
+        responseJson: generationError?.responseJson ?? null,
         inspirationPayload,
         error: generationError,
       });
