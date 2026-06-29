@@ -2,6 +2,7 @@
 
 import { ProductionWorkspaceProject } from "@/types/production-studio";
 import SourceIdeaPanel from "./SourceIdeaPanel";
+import ScriptEditorPanel from "./ScriptEditorPanel";
 
 type ProductionWorkspaceShellProps = {
   project: ProductionWorkspaceProject;
@@ -37,12 +38,7 @@ export default function ProductionWorkspaceShell({
         <SourceIdeaPanel project={project} />
 
         {/* Center Column - Script Workspace Panel */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-          <h2 className="mb-4 text-lg font-semibold text-white">Script Workspace</h2>
-          <div className="flex h-full items-center justify-center rounded-xl bg-slate-800/50 p-4 text-sm text-slate-300">
-            Script Editor Panel
-          </div>
-        </div>
+        <ScriptEditorPanel project={project} />
 
         {/* Right Column - Production Metadata Panel */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
