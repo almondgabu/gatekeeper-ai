@@ -18,6 +18,7 @@ import {
   Video,
 } from "lucide-react";
 import ProductionWorkspaceShell from "@/components/production-studio/ProductionWorkspaceShell";
+import WorkflowNavigator from "@/components/production-studio/WorkflowNavigator";
 import { createWorkspaceFromIdea } from "@/lib/production-studio/createWorkspaceFromIdea";
 import { saveProductionWorkspace } from "@/lib/production-studio/workspaceStorage";
 import { type ProductionWorkspaceProject } from "@/types/production-studio";
@@ -1106,6 +1107,20 @@ export default function ContentStudioPage() {
   }
 
   const showingStructuredPackage = Boolean(generatedPackage && hasProductionStudioStructure(generatedPackage));
+  const activeWorkflow = useMemo<"normal-post" | "video-reel" | null>(() => {
+    const sourceIdeaType = activeProductionWorkspace?.sourceMetadata?.ideaType;
+    const sourceBestFormat = activeProductionWorkspace?.sourceMetadata?.bestFormat;
+
+    if (sourceIdeaType === "social_post" || sourceBestFormat === "Normal Post") {
+      return "normal-post";
+    }
+
+    if (sourceIdeaType === "short_video" || sourceBestFormat === "Reel / Video") {
+      return "video-reel";
+    }
+
+    return ideaWorkflow;
+  }, [activeProductionWorkspace, ideaWorkflow]);
   const isNormalPostWorkspaceActive =
     mode === "create-content" &&
     Boolean(activeProductionWorkspace) &&
@@ -1113,7 +1128,20 @@ export default function ContentStudioPage() {
       activeProductionWorkspace?.sourceMetadata?.ideaType === "social_post" ||
       activeProductionWorkspace?.sourceMetadata?.bestFormat === "Normal Post"
     );
-  const createContentTabLabel = isNormalPostWorkspaceActive ? "Post Workspace" : "Production Studio";
+  const workflowStep2Title = activeWorkflow === "normal-post"
+    ? "📝 Post Workspace"
+    : activeWorkflow === "video-reel"
+      ? "🎬 AI Director Studio"
+      : "Workspace";
+  const workflowStep2Description = activeWorkflow
+    ? "Workspace unlocks automatically after selecting an idea."
+    : "Workspace will unlock after selecting an idea.";
+  const canOpenWorkflowStep2 = Boolean(
+    activeProductionWorkspace ||
+    generatedPackage ||
+    loadedOpportunityTitle ||
+    mode === "create-content",
+  );
 
   return (
     <div className="min-h-screen w-full px-6 py-8 text-white md:px-10 md:py-10">
@@ -1121,17 +1149,21 @@ export default function ContentStudioPage() {
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-yellow-400">
-              {isNormalPostWorkspaceActive ? "✍️ Post Workspace" : "🎬 Production Studio v1"}
+              AI Creative Workflow
             </p>
             <h1 className="mt-3 text-3xl font-semibold text-white md:text-5xl">
-              {isNormalPostWorkspaceActive
-                ? "Professional post drafting workspace for Borneo Land Gatekeeper"
-                : "Production-ready posts and Google Flow packages for Borneo Land Gatekeeper"}
+              {mode === "inspiration"
+                ? "Start with AI Idea Explorer to guide every content workflow"
+                : mode === "create-content"
+                  ? "Continue in your active workspace"
+                  : "Resume from saved projects"}
             </h1>
             <p className="mt-4 max-w-3xl text-base leading-7 text-slate-300 md:text-lg">
-              {isNormalPostWorkspaceActive
-                ? "Write, refine, and finalize a single-image social media post with one professional image prompt."
-                : "Build complete Facebook posts and Google Flow-ready production packages without leaving Gatekeeper AI."}
+              {mode === "inspiration"
+                ? "AI Idea Explorer is always your first step: generate ideas, evaluate options, and move forward with one click."
+                : mode === "create-content"
+                  ? "The workspace follows your selected workflow automatically, so there is no second workspace decision."
+                  : "Saved Projects keeps your previous ideas, drafts, and workspaces ready to continue."}
             </p>
           </div>
 
@@ -1140,11 +1172,19 @@ export default function ContentStudioPage() {
           </div>
         </div>
 
-        <div className="mt-6 inline-flex rounded-2xl border border-slate-800 bg-slate-950 p-1">
-          <ModeButton label={createContentTabLabel} active={mode === "create-content"} onClick={() => setMode("create-content")} />
-          <ModeButton label="Idea Explorer" active={mode === "inspiration"} onClick={() => setMode("inspiration")} />
-          <ModeButton label="Saved" active={mode === "saved"} onClick={() => setMode("saved")} />
-        </div>
+        <WorkflowNavigator
+          mode={mode}
+          step2Title={workflowStep2Title}
+          step2Description={workflowStep2Description}
+          step2Enabled={canOpenWorkflowStep2}
+          onSelectStep={(nextMode) => {
+            if (nextMode === "create-content" && !canOpenWorkflowStep2) {
+              return;
+            }
+
+            setMode(nextMode);
+          }}
+        />
 
         {loadedOpportunityTitle ? (
           <div className="mt-5 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 px-5 py-4 text-sm text-yellow-100">
@@ -1956,20 +1996,6 @@ export default function ContentStudioPage() {
         </section>
       </div>
     </div>
-  );
-}
-
-function ModeButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-        active ? "bg-yellow-500 text-slate-950" : "text-slate-300 hover:text-white"
-      }`}
-    >
-      {label}
-    </button>
   );
 }
 
