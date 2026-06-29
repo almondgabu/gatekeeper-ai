@@ -17,6 +17,10 @@ import {
   Target,
   Video,
 } from "lucide-react";
+import ProductionWorkspaceShell from "@/components/production-studio/ProductionWorkspaceShell";
+import { createWorkspaceFromIdea } from "@/lib/production-studio/createWorkspaceFromIdea";
+import { saveProductionWorkspace } from "@/lib/production-studio/workspaceStorage";
+import { type ProductionWorkspaceProject } from "@/types/production-studio";
 
 type ContentTypeOption = {
   value: string;
@@ -390,6 +394,33 @@ function mapIdeaBestFormatToContentType(value: InspirationIdea["bestFormat"]) {
   return value === "Reel / Video" ? "reel-video" : "normal-post";
 }
 
+type MapperIdea = Parameters<typeof createWorkspaceFromIdea>[0];
+
+function mapInspirationIdeaToWorkspaceIdea(
+  idea: InspirationIdea,
+  selectedPlatform: string,
+  selectedGoal: string,
+): MapperIdea {
+  return {
+    title: idea.title,
+    hook: idea.summary || idea.title,
+    coreConcept: idea.summary || idea.whyThisIdea || idea.title,
+    targetAudience: "General audience",
+    emotion: "Trust",
+    platform: selectedPlatform,
+    estimatedReach: Math.max(idea.potentialScore * 100, 100),
+    engagementPotential: idea.potentialScore,
+    difficulty: idea.difficulty,
+    productionTime: idea.estimatedProductionTime,
+    suggestedCTA: `Encourage action for ${getGoalLabel(selectedGoal).toLowerCase()}`,
+    thumbnailPrompt: `Thumbnail concept for: ${idea.title}`,
+    keyVisualPrompt: `Key visual concept for: ${idea.title}`,
+    animationPrompt: `Motion concept for: ${idea.title}`,
+    confidenceScore: idea.potentialScore,
+    whyThisWorks: idea.whyThisIdea,
+  };
+}
+
 function getDataUrlMimeType(dataUrl: string | null) {
   if (!dataUrl) {
     return "";
@@ -432,6 +463,7 @@ export default function ContentStudioPage() {
   const [ideaPages, setIdeaPages] = useState<InspirationIdea[][]>([]);
   const [ideaPageIndex, setIdeaPageIndex] = useState(0);
   const [savedItems, setSavedItems] = useState<SavedHistoryItem[]>([]);
+  const [activeProductionWorkspace, setActiveProductionWorkspace] = useState<ProductionWorkspaceProject | null>(null);
   const [loadedOpportunityTitle, setLoadedOpportunityTitle] = useState<string | null>(null);
 
   useEffect(() => {
@@ -920,7 +952,23 @@ export default function ContentStudioPage() {
     }
   }
 
+  function handleProductionWorkspaceChange(updatedProject: ProductionWorkspaceProject) {
+    const nextProject = {
+      ...updatedProject,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setActiveProductionWorkspace(nextProject);
+    saveProductionWorkspace(nextProject);
+  }
+
   function useIdea(idea: InspirationIdea) {
+    const workspace = createWorkspaceFromIdea(
+      mapInspirationIdeaToWorkspaceIdea(idea, platform, ideaGoal),
+    );
+
+    saveProductionWorkspace(workspace);
+    setActiveProductionWorkspace(workspace);
     setTopic(`${idea.title}: ${getIdeaSummary(idea)}`);
     setContentType(mapIdeaBestFormatToContentType(idea.bestFormat));
     setGoal(mapExplorerGoalToStudioGoal(ideaGoal));
@@ -1317,7 +1365,14 @@ export default function ContentStudioPage() {
           </div>
 
           {mode === "create-content" ? (
-            !generatedPackage ? (
+            activeProductionWorkspace ? (
+              <div className="mt-6">
+                <ProductionWorkspaceShell
+                  project={activeProductionWorkspace}
+                  onChange={handleProductionWorkspaceChange}
+                />
+              </div>
+            ) : !generatedPackage ? (
               <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
                 Set up the Director&apos;s Desk on the left, then generate a complete production package.
               </div>
@@ -1618,7 +1673,7 @@ export default function ContentStudioPage() {
                           className="inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-yellow-400"
                         >
                           <Sparkles size={16} />
-                          Explore idea
+                          Use This Idea
                         </button>
 
                         <button
