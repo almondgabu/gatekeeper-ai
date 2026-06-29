@@ -4,9 +4,28 @@ import { ProductionWorkspaceProject } from "@/types/production-studio";
 
 type ScriptEditorPanelProps = {
   project: ProductionWorkspaceProject;
+  onChange: (project: ProductionWorkspaceProject) => void;
 };
 
-export default function ScriptEditorPanel({ project }: ScriptEditorPanelProps) {
+export default function ScriptEditorPanel({ project, onChange }: ScriptEditorPanelProps) {
+  function handleBlockContentChange(blockId: string, nextContent: string) {
+    const nextProject: ProductionWorkspaceProject = {
+      ...project,
+      updatedAt: new Date().toISOString(),
+      contentBlocks: project.contentBlocks.map((block) =>
+        block.id === blockId
+          ? {
+              ...block,
+              content: nextContent,
+              updatedAt: new Date().toISOString(),
+            }
+          : block,
+      ),
+    };
+
+    onChange(nextProject);
+  }
+
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
       <h2 className="mb-4 text-lg font-semibold text-white">Script Workspace</h2>
@@ -26,9 +45,13 @@ export default function ScriptEditorPanel({ project }: ScriptEditorPanelProps) {
                     {block.status}
                   </span>
                 </div>
-                <div className="text-slate-300 whitespace-pre-wrap">
-                  {block.content}
-                </div>
+                <textarea
+                  value={block.content}
+                  onChange={(event) => handleBlockContentChange(block.id, event.target.value)}
+                  rows={4}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500"
+                  placeholder="Write block content..."
+                />
                 {block.notes && (
                   <div className="mt-2 pt-2 border-t border-slate-700">
                     <p className="text-xs text-slate-400 italic">

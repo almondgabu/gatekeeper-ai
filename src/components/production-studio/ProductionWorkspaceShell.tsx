@@ -22,6 +22,7 @@ type ProductionWorkspaceShellProps = {
  */
 export default function ProductionWorkspaceShell({
   project,
+  onChange,
 }: ProductionWorkspaceShellProps) {
   return (
     <div className="h-full w-full bg-[#0A1023] p-6">
@@ -39,7 +40,7 @@ export default function ProductionWorkspaceShell({
         <SourceIdeaPanel project={project} />
 
         {/* Center Column - Script Workspace Panel */}
-        <ScriptEditorPanel project={project} />
+        <ScriptEditorPanel project={project} onChange={onChange} />
 
         {/* Right Column - Production Metadata Panel */}
         <ProductionMetadataPanel project={project} />
