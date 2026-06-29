@@ -80,9 +80,15 @@ type InspirationIdea = {
   ideaType?: "social_post" | "short_video";
   bestFormat: "Normal Post" | "Reel / Video";
   potentialScore: number;
+  engagementPotential?: number;
+  confidenceScore?: number;
+  targetAudience?: string;
   difficulty: "Easy" | "Medium" | "Advanced";
+  productionTime?: string;
   estimatedProductionTime: string;
   whyThisIdea: string;
+  whyThisWorks?: string;
+  keyVisualPrompt?: string;
 };
 
 type SavedHistoryItem = {
@@ -480,6 +486,33 @@ function isSupportedIdeaImageDataUrl(dataUrl: string | null) {
   return supportedIdeaImageMimeTypes.has(getDataUrlMimeType(dataUrl));
 }
 
+function getIdeaRecommendationScore(idea: InspirationIdea) {
+  const engagement = Number(idea.engagementPotential);
+  if (Number.isFinite(engagement) && engagement > 0) {
+    return { score: engagement, source: "engagement" as const };
+  }
+
+  const potential = Number(idea.potentialScore);
+  if (Number.isFinite(potential) && potential > 0) {
+    return { score: potential, source: "potential" as const };
+  }
+
+  const confidence = Number(idea.confidenceScore);
+  if (Number.isFinite(confidence) && confidence > 0) {
+    return { score: confidence, source: "confidence" as const };
+  }
+
+  return { score: 0, source: "fallback" as const };
+}
+
+function getNormalPostVisualConcept(idea: InspirationIdea, selectedPlatform: string) {
+  if (idea.keyVisualPrompt?.trim()) {
+    return idea.keyVisualPrompt.trim();
+  }
+
+  return `A polished real-estate visual concept for ${idea.title} on ${selectedPlatform}, with professional composition, clean focal framing, and premium editorial lighting.`;
+}
+
 export default function ContentStudioPage() {
   const hasAppliedOpportunityPrefill = useRef(false);
   const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("inspiration");
@@ -608,6 +641,24 @@ export default function ContentStudioPage() {
   );
 
   const visibleIdeas = ideaPages[ideaPageIndex] ?? [];
+  const recommendedIdeaIndex = useMemo(() => {
+    if (visibleIdeas.length === 0) {
+      return -1;
+    }
+
+    let bestIndex = 0;
+    let bestScore = -1;
+
+    visibleIdeas.forEach((idea, index) => {
+      const { score } = getIdeaRecommendationScore(idea);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+
+    return bestIndex;
+  }, [visibleIdeas]);
   const canGoToPreviousIdeas = ideaPageIndex > 0;
   const canGoToNextIdeas = ideaPageIndex < ideaPages.length - 1;
 
@@ -1888,7 +1939,7 @@ export default function ContentStudioPage() {
           ) : mode === "inspiration" ? (
             visibleIdeas.length === 0 ? (
               <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-                Follow steps 1 and 2, then click Explore Ideas to get your first 10 cards.
+                Share a topic, screenshot, or image and let Gatekeeper AI generate professional content ideas.
               </div>
             ) : (
               <div className="mt-6 space-y-4">
@@ -1897,12 +1948,36 @@ export default function ContentStudioPage() {
                 </div>
 
                 <div className="grid gap-4">
-                {visibleIdeas.map((idea) => (
-                  <div key={`${idea.title}-${idea.summary}`} className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
+                {visibleIdeas.map((idea, index) => {
+                  const recommendation = getIdeaRecommendationScore(idea);
+                  const recommendationReason = recommendation.source === "engagement"
+                    ? `Highest engagement potential in this batch (${Math.round(recommendation.score)}/100).`
+                    : recommendation.source === "potential"
+                      ? `Highest potential score in this batch (${Math.round(recommendation.score)}/100).`
+                      : recommendation.source === "confidence"
+                        ? `Highest confidence score in this batch (${Math.round(recommendation.score)}/100).`
+                        : `Best available fit for your current ${getGoalLabel(ideaGoal)} goal.`;
+                  const isRecommended = index === recommendedIdeaIndex;
+                  const isNormalPostIdea =
+                    idea.ideaType === "social_post" ||
+                    idea.bestFormat === "Normal Post" ||
+                    selectedIdeaType === "social_post";
+                  const visualConcept = getNormalPostVisualConcept(idea, platform);
+
+                  return (
+                  <div key={`${idea.title}-${idea.summary}-${index}`} className="rounded-2xl border border-slate-800 bg-slate-950 p-5 shadow-[0_14px_40px_rgba(2,6,23,0.18)]">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="max-w-3xl">
+                        {isRecommended ? (
+                          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] text-yellow-200">
+                            <span>🏆 AI Recommended</span>
+                          </div>
+                        ) : null}
                         <h3 className="text-xl font-semibold text-white">{idea.title}</h3>
                         <p className="mt-3 text-sm leading-7 text-slate-300">{getIdeaSummary(idea)}</p>
+                        {isRecommended ? (
+                          <p className="mt-3 text-xs leading-6 text-yellow-100/90">{recommendationReason}</p>
+                        ) : null}
                       </div>
 
                       <div className="flex shrink-0 flex-wrap gap-3">
@@ -1917,39 +1992,48 @@ export default function ContentStudioPage() {
 
                         <button
                           type="button"
-                          onClick={() => saveIdea(idea)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
-                        >
-                          <FolderClock size={16} />
-                          Save idea
-                        </button>
-
-                        <button
-                          type="button"
                           onClick={() => refreshIdea(idea)}
                           disabled={refreshingIdeaKey === idea.title}
                           className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <RefreshCw size={16} className={refreshingIdeaKey === idea.title ? "animate-spin" : undefined} />
-                          {refreshingIdeaKey === idea.title ? "Refreshing..." : "Refresh"}
+                          {refreshingIdeaKey === idea.title ? "Refreshing..." : "Refresh Idea"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => saveIdea(idea)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white"
+                        >
+                          <FolderClock size={16} />
+                          Save Idea
                         </button>
                       </div>
                     </div>
 
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <IdeaField label="Idea type" value={idea.ideaType ? getIdeaTypeLabel(idea.ideaType) : getIdeaTypeLabel(selectedIdeaType)} />
-                      <IdeaField label="Best format" value={idea.bestFormat || "Normal Post"} />
-                      <IdeaField label="Potential score" value={`${idea.potentialScore ?? 70}/100`} />
-                      <IdeaField label="Difficulty" value={idea.difficulty || "Medium"} />
-                      <IdeaField label="Estimated production time" value={idea.estimatedProductionTime || "Standard"} />
+                      <IdeaField label="Target Audience" value={idea.targetAudience || "General property audience"} />
+                      <IdeaField label="Engagement Potential" value={`${Math.round(Number.isFinite(Number(idea.engagementPotential)) ? Number(idea.engagementPotential) : idea.potentialScore ?? 70)}/100`} />
+                      <IdeaField label="Estimated Difficulty" value={idea.difficulty || "Medium"} />
+                      <IdeaField label="Estimated Time" value={idea.productionTime || idea.estimatedProductionTime || "Standard"} />
                     </div>
 
                     <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Why this idea</p>
-                      <p className="mt-3 text-sm leading-7 text-slate-300">{idea.whyThisIdea || "Strong fit for your selected goal and source."}</p>
+                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Why This Idea Works</p>
+                      <p className="mt-3 text-sm leading-7 text-slate-300">{idea.whyThisWorks || idea.whyThisIdea || "Strong fit for your selected goal and source."}</p>
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Professional Visual Concept</p>
+                      <p className="mt-3 text-sm leading-7 text-slate-300">
+                        {isNormalPostIdea
+                          ? visualConcept
+                          : "Visual concept preview is optimized for Normal Post ideas. Select a Normal Post workflow for image-first concept guidance."}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">Preview concept only. Final image prompt is generated later in Post Workspace.</p>
                     </div>
                   </div>
-                ))}
+                );})}
                 </div>
               </div>
             )
