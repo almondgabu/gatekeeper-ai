@@ -557,13 +557,14 @@ export default function ContentStudioPage() {
       mode: "inspiration",
       sourceType: ideaSourceType,
       ideaType,
+      platform,
       topic: ideaSourceType === "topic" ? ideaTopic.trim() : "",
       imageDataUrl: ideaSourceType === "image" ? ideaImageDataUrl : null,
       context: ideaContext.trim(),
       goal: ideaGoal,
       ideaCount: 10,
     }),
-    [ideaSourceType, ideaType, ideaTopic, ideaImageDataUrl, ideaContext, ideaGoal],
+    [ideaSourceType, ideaType, platform, ideaTopic, ideaImageDataUrl, ideaContext, ideaGoal],
   );
 
   const visibleIdeas = ideaPages[ideaPageIndex] ?? [];

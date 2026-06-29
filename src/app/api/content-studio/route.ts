@@ -448,7 +448,7 @@ function normalizeDifficulty(value: string) {
     return "Advanced";
   }
 
-  throw new Error("Invalid difficulty value");
+  return "Easy";
 }
 
 function normalizeBestFormat(value: string) {
@@ -461,10 +461,19 @@ function normalizeBestFormat(value: string) {
   return "Normal Post" as const;
 }
 
-function normalizeInspirationResponse(value: unknown): InspirationResponse {
+function normalizeInspirationResponse(
+  value: unknown,
+  options: {
+    ideaType: "social_post" | "short_video";
+    selectedPlatform: string;
+  },
+): InspirationResponse {
   if (!value || typeof value !== "object") {
     throw new Error("Invalid inspiration response");
   }
+
+  const forcedBestFormat = options.ideaType === "short_video" ? "Reel / Video" : "Normal Post";
+  const fallbackPlatform = options.selectedPlatform || "Facebook";
 
   const payload = value as Record<string, unknown>;
   const ideas = Array.isArray(payload.ideas)
@@ -494,94 +503,68 @@ function normalizeInspirationResponse(value: unknown): InspirationResponse {
           const whyThisWorks = normalizeText(record.whyThisWorks);
 
           // For backward compatibility, fall back to old field names
-          const summary = normalizeText(record.summary) || coreConcept;
-          const estimatedProductionTime = normalizeText(record.estimatedProductionTime) || productionTime;
-          const whyThisIdea = normalizeText(record.whyThisIdea) || whyThisWorks;
-          const potentialScore = Number(record.potentialScore) || confidenceScore;
+          const summary = normalizeText(record.summary) || coreConcept || hook;
+          const concept = coreConcept || summary || hook;
+          const generatedTitle = concept ? concept.slice(0, 80) : "";
+          const normalizedTitle = title || generatedTitle;
 
-          if (
-            !title ||
-            !hook ||
-            !coreConcept ||
-            !targetAudience ||
-            !emotion ||
-            !platform ||
-            !Number.isFinite(engagementPotential) ||
-            !rawBestFormat ||
-            !rawDifficulty ||
-            !productionTime ||
-            !suggestedCTA ||
-            !thumbnailPrompt ||
-            !keyVisualPrompt ||
-            !Number.isFinite(confidenceScore) ||
-            !whyThisWorks
-          ) {
-            // Fallback to old format for backward compatibility
-            if (title && summary && rawBestFormat && Number.isFinite(potentialScore) && rawDifficulty && estimatedProductionTime && whyThisIdea) {
-              const boundedScore = Math.max(1, Math.min(100, Math.round(potentialScore)));
-              const bestFormat = normalizeBestFormat(rawBestFormat);
-              return {
-                title,
-                summary,
-                bestFormat,
-                potentialScore: boundedScore,
-                hook: summary,
-                coreConcept: summary,
-                targetAudience: "Land buyers, sellers, and investors in Sabah",
-                emotion: "Informative",
-                platform: "Facebook",
-                estimatedReach: 1000,
-                engagementPotential: boundedScore,
-                difficulty: normalizeDifficulty(rawDifficulty),
-                productionTime: estimatedProductionTime,
-                suggestedCTA: "Learn more about land verification",
-                thumbnailPrompt: "A visual representation of the idea",
-                keyVisualPrompt: "Key visual for the content",
-                animationPrompt: bestFormat === "Reel / Video" ? "Simple animation for short video" : undefined,
-                confidenceScore: boundedScore,
-                whyThisWorks: whyThisIdea,
-                estimatedProductionTime,
-                whyThisIdea,
-                ideaType: bestFormat === "Reel / Video" ? "short_video" : "social_post",
-              };
-            }
+          if (!normalizedTitle && !concept) {
             return null;
           }
 
-          const boundedEngagement = Math.max(1, Math.min(100, Math.round(engagementPotential)));
-          const boundedConfidence = Math.max(1, Math.min(100, Math.round(confidenceScore)));
-          const bestFormat = normalizeBestFormat(rawBestFormat);
+          const safeEngagementBase = Number.isFinite(engagementPotential)
+            ? engagementPotential
+            : Number.isFinite(Number(record.potentialScore))
+              ? Number(record.potentialScore)
+              : 70;
+          const boundedEngagement = Math.max(1, Math.min(100, Math.round(safeEngagementBase)));
+          const boundedConfidence = Number.isFinite(confidenceScore)
+            ? Math.max(1, Math.min(100, Math.round(confidenceScore)))
+            : 75;
+          const safeProductionTime = productionTime || normalizeText(record.estimatedProductionTime) || "15-30 minutes";
+          const safeThumbnailPrompt = thumbnailPrompt || (options.ideaType === "short_video"
+            ? `Create a cinematic AI keyframe still for: ${normalizedTitle || concept}`
+            : `Create a professional, creative photo-style AI image for: ${normalizedTitle || concept}`);
+          const safeWhyThisWorks = whyThisWorks || "This idea is practical, clear, and easy for your audience to engage with.";
+          const safeHook = hook || summary || concept || normalizedTitle;
+          const safeCoreConcept = concept || safeHook;
+          const safeSummary = summary || safeCoreConcept;
+          const safePlatform = platform || fallbackPlatform;
+          const safeDifficulty = rawDifficulty ? normalizeDifficulty(rawDifficulty) : "Easy";
+          const safeSuggestedCta = suggestedCTA || "Contact Borneo Land Gatekeeper for more information.";
 
           return {
-            title,
-            summary: coreConcept,
-            bestFormat,
+            title: normalizedTitle,
+            summary: safeSummary,
+            bestFormat: forcedBestFormat,
             potentialScore: boundedEngagement,
-            hook,
-            coreConcept,
-            targetAudience,
-            emotion,
-            platform,
+            hook: safeHook,
+            coreConcept: safeCoreConcept,
+            targetAudience: targetAudience || "General audience",
+            emotion: emotion || "Curiosity",
+            platform: safePlatform,
             estimatedReach: Number.isFinite(estimatedReach) ? Math.max(0, Math.round(estimatedReach)) : 1000,
             engagementPotential: boundedEngagement,
-            difficulty: normalizeDifficulty(rawDifficulty),
-            productionTime,
-            suggestedCTA,
-            thumbnailPrompt,
-            keyVisualPrompt,
-            animationPrompt: bestFormat === "Reel / Video" ? animationPrompt : undefined,
+            difficulty: safeDifficulty,
+            productionTime: safeProductionTime,
+            suggestedCTA: safeSuggestedCta,
+            thumbnailPrompt: safeThumbnailPrompt,
+            keyVisualPrompt: keyVisualPrompt || safeThumbnailPrompt,
+            animationPrompt: options.ideaType === "short_video"
+              ? (animationPrompt || "Subtle cinematic motion with smooth transitions and consistent style.")
+              : "",
             confidenceScore: boundedConfidence,
-            whyThisWorks,
-            estimatedProductionTime: productionTime,
-            whyThisIdea: whyThisWorks,
-            ideaType: bestFormat === "Reel / Video" ? "short_video" : "social_post",
+            whyThisWorks: safeWhyThisWorks,
+            estimatedProductionTime: safeProductionTime,
+            whyThisIdea: normalizeText(record.whyThisIdea) || safeWhyThisWorks,
+            ideaType: options.ideaType,
           };
         })
         .filter(Boolean) as InspirationIdea[]
     : [];
 
   if (ideas.length === 0) {
-    throw new Error("Incomplete inspiration response");
+    throw new Error("No usable inspiration ideas returned.");
   }
 
   return { ideas };
@@ -599,6 +582,7 @@ export async function POST(request: Request) {
     if (mode === "inspiration" || mode === "inspiration-refresh") {
       const sourceType = normalizeText(body?.sourceType).toLowerCase();
       const ideaType = normalizeText(body?.ideaType).toLowerCase() || "social_post";
+      const selectedPlatform = normalizeText(body?.platform) || "Facebook";
       const goal = normalizeText(body?.goal).toLowerCase().replace(/\s+/g, "-");
       const ideaCount = Number(body?.ideaCount ?? (mode === "inspiration-refresh" ? 1 : 10));
       const topic = normalizeText(body?.topic);
@@ -726,13 +710,12 @@ ${additionalUserContext}
           : prompt,
       });
 
-      const normalizedResponse = normalizeInspirationResponse(parseJsonResponse(response.output_text));
-      const decoratedIdeas = normalizedResponse.ideas.map((idea) => ({
-        ...idea,
+      const normalizedResponse = normalizeInspirationResponse(parseJsonResponse(response.output_text), {
         ideaType: ideaType as "social_post" | "short_video",
-      }));
+        selectedPlatform,
+      });
 
-      return NextResponse.json({ ideas: decoratedIdeas });
+      return NextResponse.json(normalizedResponse);
     }
 
     const rawContentType = normalizeText(body?.contentType).toLowerCase();
