@@ -1256,7 +1256,7 @@ export default function ContentStudioPage() {
                   disabled={generating}
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-5 py-3 font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {generating ? "Loading..." : "Next 10"}
+                  {generating ? "Loading..." : "Explore More Ideas"}
                 </button>
               </>
             ) : (

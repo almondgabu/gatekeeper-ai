@@ -11,6 +11,8 @@ const allowedModes = new Set(["create-content", "inspiration", "inspiration-refr
 const allowedContentTypes = new Set([
   "normal-post",
   "reel-video",
+  "social_post",
+  "short_video",
   "standard-post",
   "reel-short-video",
   "property-listing",
@@ -132,12 +134,21 @@ type StudioResponse = {
 
 type InspirationIdea = {
   title: string;
-  summary: string;
-  bestFormat: "Normal Post" | "Reel / Video";
-  potentialScore: number;
+  hook: string;
+  coreConcept: string;
+  targetAudience: string;
+  emotion: string;
+  platform: string;
+  estimatedReach: number;
+  engagementPotential: number;
   difficulty: "Easy" | "Medium" | "Advanced";
-  estimatedProductionTime: string;
-  whyThisIdea: string;
+  productionTime: string;
+  suggestedCTA: string;
+  thumbnailPrompt: string;
+  keyVisualPrompt: string;
+  animationPrompt?: string;
+  confidenceScore: number;
+  whyThisWorks: string;
 };
 
 type InspirationResponse = {
@@ -474,35 +485,91 @@ function normalizeInspirationResponse(value: unknown): InspirationResponse {
 
           const record = idea as Record<string, unknown>;
           const title = normalizeText(record.title);
-          const summary = normalizeText(record.summary);
+          const hook = normalizeText(record.hook);
+          const coreConcept = normalizeText(record.coreConcept);
+          const targetAudience = normalizeText(record.targetAudience);
+          const emotion = normalizeText(record.emotion);
+          const platform = normalizeText(record.platform);
+          const estimatedReach = Number(record.estimatedReach);
+          const engagementPotential = Number(record.engagementPotential);
           const rawBestFormat = normalizeText(record.bestFormat);
-          const potentialScore = Number(record.potentialScore);
           const rawDifficulty = normalizeText(record.difficulty);
-          const estimatedProductionTime = normalizeText(record.estimatedProductionTime);
-          const whyThisIdea = normalizeText(record.whyThisIdea);
+          const productionTime = normalizeText(record.productionTime);
+          const suggestedCTA = normalizeText(record.suggestedCTA);
+          const thumbnailPrompt = normalizeText(record.thumbnailPrompt);
+          const keyVisualPrompt = normalizeText(record.keyVisualPrompt);
+          const animationPrompt = normalizeText(record.animationPrompt);
+          const confidenceScore = Number(record.confidenceScore);
+          const whyThisWorks = normalizeText(record.whyThisWorks);
+
+          // For backward compatibility, fall back to old field names
+          const summary = normalizeText(record.summary) || coreConcept;
+          const estimatedProductionTime = normalizeText(record.estimatedProductionTime) || productionTime;
+          const whyThisIdea = normalizeText(record.whyThisIdea) || whyThisWorks;
+          const potentialScore = Number(record.potentialScore) || confidenceScore;
 
           if (
             !title ||
-            !summary ||
+            !hook ||
+            !coreConcept ||
+            !targetAudience ||
+            !emotion ||
+            !platform ||
+            !Number.isFinite(engagementPotential) ||
             !rawBestFormat ||
-            !Number.isFinite(potentialScore) ||
             !rawDifficulty ||
-            !estimatedProductionTime ||
-            !whyThisIdea
+            !productionTime ||
+            !suggestedCTA ||
+            !thumbnailPrompt ||
+            !keyVisualPrompt ||
+            !Number.isFinite(confidenceScore) ||
+            !whyThisWorks
           ) {
+            // Fallback to old format for backward compatibility
+            if (title && summary && rawBestFormat && Number.isFinite(potentialScore) && rawDifficulty && estimatedProductionTime && whyThisIdea) {
+              const boundedScore = Math.max(1, Math.min(100, Math.round(potentialScore)));
+              return {
+                title,
+                hook: summary,
+                coreConcept: summary,
+                targetAudience: "Land buyers, sellers, and investors in Sabah",
+                emotion: "Informative",
+                platform: "Facebook",
+                estimatedReach: 1000,
+                engagementPotential: boundedScore,
+                difficulty: normalizeDifficulty(rawDifficulty),
+                productionTime: estimatedProductionTime,
+                suggestedCTA: "Learn more about land verification",
+                thumbnailPrompt: "A visual representation of the idea",
+                keyVisualPrompt: "Key visual for the content",
+                animationPrompt: rawBestFormat === "Reel / Video" ? "Simple animation for short video" : undefined,
+                confidenceScore: boundedScore,
+                whyThisWorks: whyThisIdea,
+              };
+            }
             return null;
           }
 
-          const boundedScore = Math.max(1, Math.min(100, Math.round(potentialScore)));
+          const boundedEngagement = Math.max(1, Math.min(100, Math.round(engagementPotential)));
+          const boundedConfidence = Math.max(1, Math.min(100, Math.round(confidenceScore)));
 
           return {
             title,
-            summary,
-            bestFormat: normalizeBestFormat(rawBestFormat),
-            potentialScore: boundedScore,
+            hook,
+            coreConcept,
+            targetAudience,
+            emotion,
+            platform,
+            estimatedReach: Number.isFinite(estimatedReach) ? Math.max(0, Math.round(estimatedReach)) : 1000,
+            engagementPotential: boundedEngagement,
             difficulty: normalizeDifficulty(rawDifficulty),
-            estimatedProductionTime,
-            whyThisIdea,
+            productionTime,
+            suggestedCTA,
+            thumbnailPrompt,
+            keyVisualPrompt,
+            animationPrompt: rawBestFormat === "Reel / Video" ? animationPrompt : undefined,
+            confidenceScore: boundedConfidence,
+            whyThisWorks,
           };
         })
         .filter(Boolean) as InspirationIdea[]
@@ -586,13 +653,22 @@ Return exactly one JSON object in this shape:
 {
   "ideas": [
     {
-      "title": "...",
-      "summary": "1-2 sentences, plain language",
-      "bestFormat": "Normal Post | Reel / Video",
-      "potentialScore": 1,
+      "title": "Catchy title for the idea",
+      "hook": "Attention-grabbing opening line",
+      "coreConcept": "Core concept in 1-2 sentences",
+      "targetAudience": "Specific audience description",
+      "emotion": "Primary emotion to evoke",
+      "platform": "Primary platform (Facebook, Instagram, TikTok, LinkedIn, YouTube Shorts)",
+      "estimatedReach": 1000,
+      "engagementPotential": 75,
       "difficulty": "Easy | Medium | Advanced",
-      "estimatedProductionTime": "...",
-      "whyThisIdea": "..."
+      "productionTime": "Estimated time to produce",
+      "suggestedCTA": "Call to action text",
+      "thumbnailPrompt": "Description for thumbnail image",
+      "keyVisualPrompt": "Description for main visual",
+      "animationPrompt": "Description for animation (only for short_video format)",
+      "confidenceScore": 85,
+      "whyThisWorks": "Explanation of why this idea works well"
     }
   ]
 }

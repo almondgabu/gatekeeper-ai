@@ -25,7 +25,7 @@ const menuItems = [
   { name: "Projects", href: "/projects", icon: FolderKanban },
   { name: "Opportunities", href: "/opportunities", icon: Target },
   { name: "Knowledge Vault", href: "/vault", icon: Library },
-  { name: "Production Studio", href: "/content-studio", icon: Clapperboard },
+  { name: "AI Idea Explorer", href: "/content-studio", icon: Clapperboard },
   { name: "User Guide", href: "/guide", icon: BookOpen },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
