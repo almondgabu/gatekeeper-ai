@@ -76,6 +76,7 @@ type GeneratedPackage = {
 type InspirationIdea = {
   title: string;
   summary: string;
+  ideaType?: "social_post" | "short_video";
   bestFormat: "Normal Post" | "Reel / Video";
   potentialScore: number;
   difficulty: "Easy" | "Medium" | "Advanced";
@@ -106,6 +107,7 @@ type SavedHistoryItem = {
     shootingEnvironment?: string;
     equipment?: string[];
     ideaSourceType?: "topic" | "image";
+    ideaType?: "social_post" | "short_video";
     ideaTopic?: string;
     ideaContext?: string;
     ideaGoal?: string;
@@ -174,6 +176,10 @@ const ideaExplorerGoals = [
   { value: "find-sellers", label: "Find Sellers" },
   { value: "branding", label: "Branding" },
 ];
+const ideaTypeOptions = [
+  { value: "social_post", label: "Normal Post" },
+  { value: "short_video", label: "Short Video" },
+] as const;
 const savedHistoryStorageKey = "gatekeeper-content-studio-history";
 const supportedIdeaImageMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 const unsupportedImageFormatMessage = "Unsupported image format. Please upload PNG, JPG, JPEG, or WEBP.";
@@ -359,6 +365,10 @@ function getGoalLabel(value: string) {
   return ideaExplorerGoals.find((goalOption) => goalOption.value === value)?.label ?? "Educate";
 }
 
+function getIdeaTypeLabel(value: "social_post" | "short_video") {
+  return ideaTypeOptions.find((option) => option.value === value)?.label ?? "Normal Post";
+}
+
 function mapExplorerGoalToStudioGoal(value: string) {
   if (value === "find-buyers" || value === "find-sellers") {
     return "Selling";
@@ -454,6 +464,7 @@ export default function ContentStudioPage() {
   const [videoType, setVideoType] = useState("AI Video");
   const [inputSource, setInputSource] = useState("topic");
   const [ideaSourceType, setIdeaSourceType] = useState<"topic" | "image">("topic");
+  const [ideaType, setIdeaType] = useState<"social_post" | "short_video">("social_post");
   const [ideaTopic, setIdeaTopic] = useState("");
   const [ideaContext, setIdeaContext] = useState("");
   const [ideaGoal, setIdeaGoal] = useState("educate");
@@ -545,13 +556,14 @@ export default function ContentStudioPage() {
     () => ({
       mode: "inspiration",
       sourceType: ideaSourceType,
+      ideaType,
       topic: ideaSourceType === "topic" ? ideaTopic.trim() : "",
       imageDataUrl: ideaSourceType === "image" ? ideaImageDataUrl : null,
       context: ideaContext.trim(),
       goal: ideaGoal,
       ideaCount: 10,
     }),
-    [ideaSourceType, ideaTopic, ideaImageDataUrl, ideaContext, ideaGoal],
+    [ideaSourceType, ideaType, ideaTopic, ideaImageDataUrl, ideaContext, ideaGoal],
   );
 
   const visibleIdeas = ideaPages[ideaPageIndex] ?? [];
@@ -907,6 +919,7 @@ export default function ContentStudioPage() {
         idea,
         context: {
           ideaSourceType,
+          ideaType,
           ideaTopic,
           ideaContext,
           ideaGoal,
@@ -951,6 +964,7 @@ export default function ContentStudioPage() {
       setIdeaPages([[item.idea]]);
       setIdeaPageIndex(0);
       setIdeaSourceType(item.context?.ideaSourceType ?? "topic");
+      setIdeaType(item.context?.ideaType ?? "social_post");
       setIdeaTopic(item.context?.ideaTopic ?? "");
       setIdeaContext(item.context?.ideaContext ?? "");
       setIdeaGoal(normalizeExplorerGoal(item.context?.ideaGoal));
@@ -1205,6 +1219,27 @@ export default function ContentStudioPage() {
 
               <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
                 <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Step 2</p>
+                <p className="mt-2 text-lg font-semibold text-white">Choose idea type</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {ideaTypeOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setIdeaType(option.value)}
+                      className={`rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                        ideaType === option.value
+                          ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-100"
+                          : "border-slate-700 bg-slate-900/60 text-slate-200 hover:border-yellow-500/30"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-yellow-300">Step 3</p>
                 <p className="mt-2 text-lg font-semibold text-white">Choose goal</p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {ideaExplorerGoals.map((goalOption) => (
@@ -1653,7 +1688,7 @@ export default function ContentStudioPage() {
             ) : (
               <div className="mt-6 space-y-4">
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm text-slate-300">
-                  Showing ideas {ideaPageIndex * 10 + 1}-{ideaPageIndex * 10 + visibleIdeas.length} | Goal: {getGoalLabel(ideaGoal)}
+                  Showing ideas {ideaPageIndex * 10 + 1}-{ideaPageIndex * 10 + visibleIdeas.length} | Goal: {getGoalLabel(ideaGoal)} | Type: {getIdeaTypeLabel(ideaType)}
                 </div>
 
                 <div className="grid gap-4">
@@ -1697,6 +1732,7 @@ export default function ContentStudioPage() {
                     </div>
 
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <IdeaField label="Idea type" value={idea.ideaType ? getIdeaTypeLabel(idea.ideaType) : getIdeaTypeLabel(ideaType)} />
                       <IdeaField label="Best format" value={idea.bestFormat || "Normal Post"} />
                       <IdeaField label="Potential score" value={`${idea.potentialScore ?? 70}/100`} />
                       <IdeaField label="Difficulty" value={idea.difficulty || "Medium"} />

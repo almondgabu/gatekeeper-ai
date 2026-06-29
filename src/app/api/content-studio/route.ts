@@ -84,6 +84,7 @@ const allowedIdeaExplorerGoals = new Set([
   "find-sellers",
   "branding",
 ]);
+const allowedIdeaTypes = new Set(["social_post", "short_video"]);
 const allowedIdeaCounts = new Set([1, 10]);
 const supportedIdeaImageMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 const unsupportedImageFormatMessage = "Unsupported image format. Please upload PNG, JPG, JPEG, or WEBP.";
@@ -134,6 +135,9 @@ type StudioResponse = {
 
 type InspirationIdea = {
   title: string;
+  summary: string;
+  bestFormat: "Normal Post" | "Reel / Video";
+  potentialScore: number;
   hook: string;
   coreConcept: string;
   targetAudience: string;
@@ -149,6 +153,9 @@ type InspirationIdea = {
   animationPrompt?: string;
   confidenceScore: number;
   whyThisWorks: string;
+  estimatedProductionTime: string;
+  whyThisIdea: string;
+  ideaType: "social_post" | "short_video";
 };
 
 type InspirationResponse = {
@@ -528,8 +535,12 @@ function normalizeInspirationResponse(value: unknown): InspirationResponse {
             // Fallback to old format for backward compatibility
             if (title && summary && rawBestFormat && Number.isFinite(potentialScore) && rawDifficulty && estimatedProductionTime && whyThisIdea) {
               const boundedScore = Math.max(1, Math.min(100, Math.round(potentialScore)));
+              const bestFormat = normalizeBestFormat(rawBestFormat);
               return {
                 title,
+                summary,
+                bestFormat,
+                potentialScore: boundedScore,
                 hook: summary,
                 coreConcept: summary,
                 targetAudience: "Land buyers, sellers, and investors in Sabah",
@@ -542,9 +553,12 @@ function normalizeInspirationResponse(value: unknown): InspirationResponse {
                 suggestedCTA: "Learn more about land verification",
                 thumbnailPrompt: "A visual representation of the idea",
                 keyVisualPrompt: "Key visual for the content",
-                animationPrompt: rawBestFormat === "Reel / Video" ? "Simple animation for short video" : undefined,
+                animationPrompt: bestFormat === "Reel / Video" ? "Simple animation for short video" : undefined,
                 confidenceScore: boundedScore,
                 whyThisWorks: whyThisIdea,
+                estimatedProductionTime,
+                whyThisIdea,
+                ideaType: bestFormat === "Reel / Video" ? "short_video" : "social_post",
               };
             }
             return null;
@@ -552,9 +566,13 @@ function normalizeInspirationResponse(value: unknown): InspirationResponse {
 
           const boundedEngagement = Math.max(1, Math.min(100, Math.round(engagementPotential)));
           const boundedConfidence = Math.max(1, Math.min(100, Math.round(confidenceScore)));
+          const bestFormat = normalizeBestFormat(rawBestFormat);
 
           return {
             title,
+            summary: coreConcept,
+            bestFormat,
+            potentialScore: boundedEngagement,
             hook,
             coreConcept,
             targetAudience,
@@ -567,9 +585,12 @@ function normalizeInspirationResponse(value: unknown): InspirationResponse {
             suggestedCTA,
             thumbnailPrompt,
             keyVisualPrompt,
-            animationPrompt: rawBestFormat === "Reel / Video" ? animationPrompt : undefined,
+            animationPrompt: bestFormat === "Reel / Video" ? animationPrompt : undefined,
             confidenceScore: boundedConfidence,
             whyThisWorks,
+            estimatedProductionTime: productionTime,
+            whyThisIdea: whyThisWorks,
+            ideaType: bestFormat === "Reel / Video" ? "short_video" : "social_post",
           };
         })
         .filter(Boolean) as InspirationIdea[]
@@ -593,6 +614,7 @@ export async function POST(request: Request) {
 
     if (mode === "inspiration" || mode === "inspiration-refresh") {
       const sourceType = normalizeText(body?.sourceType).toLowerCase();
+      const ideaType = normalizeText(body?.ideaType).toLowerCase();
       const goal = normalizeText(body?.goal).toLowerCase().replace(/\s+/g, "-");
       const ideaCount = Number(body?.ideaCount ?? (mode === "inspiration-refresh" ? 1 : 10));
       const topic = normalizeText(body?.topic);
@@ -608,6 +630,10 @@ export async function POST(request: Request) {
 
       if (!allowedIdeaExplorerGoals.has(goal)) {
         return NextResponse.json({ error: "Invalid goal" }, { status: 400 });
+      }
+
+      if (!allowedIdeaTypes.has(ideaType)) {
+        return NextResponse.json({ error: "Invalid ideaType" }, { status: 400 });
       }
 
       if (!allowedIdeaCounts.has(ideaCount)) {
@@ -632,6 +658,8 @@ export async function POST(request: Request) {
       const sourceSummary = sourceType === "topic"
         ? `Topic from user: ${topic}`
         : "User uploaded a screenshot/image as the inspiration source. Infer practical context only from visible clues.";
+      const selectedIdeaTypeLabel = ideaType === "short_video" ? "Short Video" : "Normal Post";
+      const selectedBestFormat = ideaType === "short_video" ? "Reel / Video" : "Normal Post";
       const additionalUserContext = context
         ? `\nAdditional user context:\n${context}\n\nUse this context to understand the image/topic better and generate ideas that are more relevant, practical, and targeted.`
         : "";
@@ -647,6 +675,8 @@ Rules:
 - Each idea must be fast to understand.
 - Return exactly ${ideaCount} ideas.
 - Do not number titles.
+- Generate ideas only for this selected type: ${selectedIdeaTypeLabel}.
+- Every idea must use bestFormat exactly "${selectedBestFormat}".
 - ${exclusionRule || "Do not produce near-duplicate ideas in the same batch."}
 
 Return exactly one JSON object in this shape:
@@ -675,6 +705,7 @@ Return exactly one JSON object in this shape:
 
 Context:
 - Goal: ${goal}
+- Selected Idea Type: ${selectedIdeaTypeLabel}
 - Source Type: ${sourceType}
 - ${sourceSummary}
 ${additionalUserContext}
@@ -695,7 +726,13 @@ ${additionalUserContext}
           : prompt,
       });
 
-      return NextResponse.json(normalizeInspirationResponse(parseJsonResponse(response.output_text)));
+      const normalizedResponse = normalizeInspirationResponse(parseJsonResponse(response.output_text));
+      const decoratedIdeas = normalizedResponse.ideas.map((idea) => ({
+        ...idea,
+        ideaType: ideaType as "social_post" | "short_video",
+      }));
+
+      return NextResponse.json({ ideas: decoratedIdeas });
     }
 
     const rawContentType = normalizeText(body?.contentType).toLowerCase();
