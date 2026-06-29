@@ -932,7 +932,10 @@ Request:
 
     return NextResponse.json(normalizeStudioResponse(parseJsonResponse(response.output_text)));
   } catch (error: any) {
-    const errorMessage = typeof error?.message === "string" ? error.message : String(error);
+    const rawErrorMessage = typeof error?.message === "string" ? error.message : String(error);
+    const errorMessage = rawErrorMessage && rawErrorMessage !== "[object Object]"
+      ? rawErrorMessage
+      : "Unexpected error while processing /api/content-studio.";
     const errorStatus = typeof error?.status === "number"
       ? error.status
       : typeof error?.statusCode === "number"
@@ -959,6 +962,7 @@ Request:
     return NextResponse.json(
       {
         error: errorMessage,
+        message: errorMessage,
         errorName: error?.name ?? "Error",
         status: errorStatus,
         details: errorDetails,

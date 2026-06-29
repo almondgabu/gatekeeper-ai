@@ -644,6 +644,7 @@ export default function ContentStudioPage() {
     try {
       const endpoint = "/api/content-studio";
       let responseStatus: number | null = null;
+      let responseStatusText: string | null = null;
       let responseBody: string | null = null;
       let responseJson: unknown = null;
       const response = await fetch(endpoint, {
@@ -655,6 +656,7 @@ export default function ContentStudioPage() {
       });
 
       responseStatus = response.status;
+      responseStatusText = response.statusText;
       responseBody = await response.text().catch(() => "");
 
       if (responseBody) {
@@ -666,32 +668,43 @@ export default function ContentStudioPage() {
       }
 
       if (!response.ok) {
-        const serverMessage = typeof (responseJson as { error?: unknown } | null)?.error === "string"
-          ? (responseJson as { error: string }).error
-          : responseBody?.trim() || "No response body.";
-        const error = new Error(`Idea Explorer request failed ${response.status}: ${serverMessage}`) as Error & {
-          responseStatus?: number;
-          responseBody?: string;
-          responseJson?: unknown;
-        };
-        error.responseStatus = responseStatus;
-        error.responseBody = responseBody;
-        error.responseJson = responseJson;
-        throw error;
+        const parsed = (responseJson && typeof responseJson === "object")
+          ? (responseJson as { error?: unknown; message?: unknown; details?: unknown })
+          : null;
+        const detailsText = typeof parsed?.details === "string" ? parsed.details : null;
+        const serverMessage =
+          (typeof parsed?.error === "string" && parsed.error) ||
+          (typeof parsed?.message === "string" && parsed.message) ||
+          detailsText ||
+          responseBody?.trim() ||
+          `Request failed with status ${response.status}.`;
+
+        console.error("[production-studio] generateIdeas API non-OK", {
+          endpoint,
+          status: responseStatus,
+          statusText: responseStatusText,
+          bodyText: responseBody,
+          bodyJson: responseJson,
+          inspirationPayload,
+        });
+
+        setError(`Idea generation failed (${response.status} ${response.statusText}): ${serverMessage}`);
+        return;
       }
 
       const result = responseJson;
 
       if (!result || typeof result !== "object") {
-        const error = new Error("Invalid API response from /api/content-studio.") as Error & {
-          responseStatus?: number;
-          responseBody?: string;
-          responseJson?: unknown;
-        };
-        error.responseStatus = responseStatus;
-        error.responseBody = responseBody;
-        error.responseJson = responseJson;
-        throw error;
+        console.error("[production-studio] generateIdeas invalid success payload", {
+          endpoint,
+          status: responseStatus,
+          statusText: responseStatusText,
+          bodyText: responseBody,
+          bodyJson: responseJson,
+          inspirationPayload,
+        });
+        setError("Idea generation returned an invalid response. Please try again.");
+        return;
       }
 
       const resultRecord = result as { ideas?: unknown };
@@ -706,6 +719,7 @@ export default function ContentStudioPage() {
         errorMessage: generationError?.message,
         errorStack: generationError?.stack,
         responseStatus: generationError?.responseStatus ?? null,
+        responseStatusText: generationError?.responseStatusText ?? null,
         responseBody: generationError?.responseBody ?? null,
         responseJson: generationError?.responseJson ?? null,
         inspirationPayload,
