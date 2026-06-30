@@ -18,6 +18,57 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import ConversationList from "./ConversationList";
 
+type SidebarContext =
+  | "chat-conversations"
+  | "recent-projects"
+  | "recent-documents"
+  | "recent-opportunities"
+  | "recent-ideas"
+  | "recent-posts"
+  | "recent-storyboards"
+  | "recent-analyses"
+  | "none";
+
+const sidebarContextRules: Array<{
+  pattern: RegExp;
+  context: SidebarContext;
+}> = [
+  { pattern: /^\/chat(\/|$)/, context: "chat-conversations" },
+  { pattern: /^\/projects(\/|$)/, context: "recent-projects" },
+  { pattern: /^\/vault(\/|$)/, context: "recent-documents" },
+  { pattern: /^\/opportunities(\/|$)/, context: "recent-opportunities" },
+  { pattern: /^\/content-studio(\/|$)/, context: "recent-ideas" },
+  { pattern: /^\/post-workspace(\/|$)/, context: "recent-posts" },
+  { pattern: /^\/director-studio(\/|$)/, context: "recent-storyboards" },
+  { pattern: /^\/content-intelligence(\/|$)/, context: "recent-analyses" },
+];
+
+function getSidebarContext(pathname: string): SidebarContext {
+  return sidebarContextRules.find((rule) => rule.pattern.test(pathname))?.context ?? "none";
+}
+
+function SidebarContextPanel({
+  context,
+  collapsed,
+}: {
+  context: SidebarContext;
+  collapsed: boolean;
+}) {
+  if (collapsed) {
+    return null;
+  }
+
+  if (context === "chat-conversations") {
+    return (
+      <div className="mt-5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 md:px-0">
+        <ConversationList showSearch={false} />
+      </div>
+    );
+  }
+
+  return null;
+}
+
 
 const menuItems = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -33,6 +84,8 @@ const menuItems = [
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const sidebarContext = getSidebarContext(pathname);
+  const showContextPanel = sidebarContext === "chat-conversations";
 
   const [collapsed, setCollapsed] = useState(false);
 
@@ -90,6 +143,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
     </div>
 
+    <div className={`min-h-0 flex-1 ${showContextPanel ? "flex flex-col" : "flex flex-col justify-center"}`}>
       <nav className="shrink-0 space-y-2 text-sm">
  {menuItems.map((item) => {
   const isActive = pathname === item.href;
@@ -117,9 +171,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       </nav>
 
-    {/* Conversation list (scrollable) */}
-    <div className="mt-5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 md:px-0">
-      <ConversationList showSearch={false} />
+      <SidebarContextPanel context={sidebarContext} collapsed={collapsed} />
     </div>
 
     </aside>
