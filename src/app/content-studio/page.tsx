@@ -19,6 +19,11 @@ import {
 } from "lucide-react";
 import ProductionWorkspaceShell from "@/components/production-studio/ProductionWorkspaceShell";
 import WorkflowNavigator from "@/components/production-studio/WorkflowNavigator";
+import {
+  AI_DIRECTOR_FIXTURE_FLAG,
+  createAiDirectorFixtureState,
+  isLocalFixtureHost,
+} from "@/lib/fixtures/aiDirectorFixture";
 import { createWorkspaceFromIdea } from "@/lib/production-studio/createWorkspaceFromIdea";
 import { saveProductionWorkspace } from "@/lib/production-studio/workspaceStorage";
 import { type ProductionWorkspaceProject } from "@/types/production-studio";
@@ -600,6 +605,41 @@ export default function ContentStudioPage() {
     if (toneValue) {
       setTone(toneValue);
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const fixture = (searchParams.get("fixture") ?? "").trim().toLowerCase();
+
+    if (fixture !== AI_DIRECTOR_FIXTURE_FLAG) {
+      return;
+    }
+
+    if (!isLocalFixtureHost(window.location.hostname)) {
+      return;
+    }
+
+    const fixtureState = createAiDirectorFixtureState(searchParams);
+    setActiveProductionWorkspace(fixtureState.workspace);
+    setIdeaWorkflow(fixtureState.workflow);
+    setIdeaType(fixtureState.ideaType);
+    setContentType(fixtureState.contentType);
+    setPlatform(fixtureState.platform);
+    setTone(fixtureState.tone);
+    setStoryStyle(fixtureState.storyStyle);
+    setIdeaGoal(fixtureState.ideaGoal);
+    setGoal(fixtureState.studioGoal);
+    setTopic(fixtureState.topic);
+    setGeneratedPackage(null);
+    setIdeaPages([]);
+    setIdeaPageIndex(0);
+    setCopiedKey(null);
+    setMode("create-content");
+    setError(null);
   }, []);
 
   const requestPayload = useMemo(
