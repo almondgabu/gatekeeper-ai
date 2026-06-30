@@ -204,6 +204,7 @@ const savedHistoryStorageKey = "gatekeeper-content-studio-history";
 const supportedIdeaImageMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 const unsupportedImageFormatMessage = "Unsupported image format. Please upload PNG, JPG, JPEG, or WEBP.";
 const maxIdeaContextLength = 1500;
+const ideaGenerationTimeoutMs = 45000;
 
 function normalizeStudioContentType(value: string) {
   const normalized = value.trim().toLowerCase();
@@ -740,6 +741,11 @@ export default function ContentStudioPage() {
     setError(null);
     setCopiedKey(null);
 
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      abortController.abort();
+    }, ideaGenerationTimeoutMs);
+
     try {
       const endpoint = "/api/content-studio";
       let responseStatus: number | null = null;
@@ -751,6 +757,7 @@ export default function ContentStudioPage() {
         headers: {
           "Content-Type": "application/json",
         },
+        signal: abortController.signal,
         body: JSON.stringify(inspirationPayload),
       });
 
@@ -808,9 +815,32 @@ export default function ContentStudioPage() {
 
       const resultRecord = result as { ideas?: unknown };
       const nextIdeas = Array.isArray(resultRecord.ideas) ? (resultRecord.ideas as InspirationIdea[]) : [];
+
+      if (nextIdeas.length === 0) {
+        console.warn("[production-studio] generateIdeas returned empty ideas", {
+          endpoint,
+          status: responseStatus,
+          statusText: responseStatusText,
+          bodyJson: responseJson,
+          inspirationPayload,
+        });
+        setError("Could not generate ideas. Please try again.");
+        return;
+      }
+
       setIdeaPages(nextIdeas.length > 0 ? [nextIdeas] : []);
       setIdeaPageIndex(0);
     } catch (generationError: any) {
+      if (generationError?.name === "AbortError") {
+        console.warn("[production-studio] generateIdeas aborted by timeout", {
+          endpoint: "/api/content-studio",
+          origin: typeof window === "undefined" ? null : window.location.origin,
+          inspirationPayload,
+        });
+        setError("Idea generation timed out. Please try again.");
+        return;
+      }
+
       console.error("[production-studio] generateIdeas failed", {
         endpoint: "/api/content-studio",
         origin: typeof window === "undefined" ? null : window.location.origin,
@@ -832,6 +862,7 @@ export default function ContentStudioPage() {
         setError(message);
       }
     } finally {
+      window.clearTimeout(timeoutId);
       setGenerating(false);
     }
   }
