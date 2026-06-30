@@ -161,7 +161,24 @@ export default function ProductionWorkspaceShell({
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Selected Idea</p>
                 <h3 className="mt-2 text-base font-semibold text-white">{project.name}</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-300">{project.description || "No idea summary provided."}</p>
-                <p className="mt-2 text-xs text-slate-400">{project.sourceMetadata?.whyThisWorks || ""}</p>
+                <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Why this idea works</p>
+                  <p className="mt-2 text-xs leading-6 text-slate-300">{project.sourceMetadata?.whyThisWorks || "Strong fit for your selected workflow and goal."}</p>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Target audience</p>
+                    <p className="mt-2 text-xs leading-6 text-slate-200">{project.targetAudience || "General audience"}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Engagement potential</p>
+                    <p className="mt-2 text-xs leading-6 text-slate-200">
+                      {Number.isFinite(Number(project.sourceMetadata?.engagementPotential))
+                        ? `${Math.round(Number(project.sourceMetadata?.engagementPotential))}/100`
+                        : "Not available"}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4">

@@ -454,22 +454,24 @@ function mapInspirationIdeaToWorkspaceIdea(
     coreConcept: idea.summary || idea.whyThisIdea || idea.title,
     ideaType: idea.ideaType ?? "social_post",
     bestFormat: idea.bestFormat,
-    targetAudience: "General audience",
+    targetAudience: idea.targetAudience || "General audience",
     emotion: "Trust",
     platform: selectedPlatform,
     inheritedGoal: getGoalLabel(selectedGoal),
     inheritedTone: selectedTone,
     inheritedStyle: selectedStoryStyle,
     estimatedReach: Math.max(idea.potentialScore * 100, 100),
-    engagementPotential: idea.potentialScore,
+    engagementPotential: Number.isFinite(Number(idea.engagementPotential))
+      ? Number(idea.engagementPotential)
+      : idea.potentialScore,
     difficulty: idea.difficulty,
-    productionTime: idea.estimatedProductionTime,
+    productionTime: idea.productionTime || idea.estimatedProductionTime,
     suggestedCTA: `Encourage action for ${getGoalLabel(selectedGoal).toLowerCase()}`,
     thumbnailPrompt: `Thumbnail concept for: ${idea.title}`,
-    keyVisualPrompt: `Key visual concept for: ${idea.title}`,
+    keyVisualPrompt: idea.keyVisualPrompt || `Key visual concept for: ${idea.title}`,
     animationPrompt: `Motion concept for: ${idea.title}`,
-    confidenceScore: idea.potentialScore,
-    whyThisWorks: idea.whyThisIdea,
+    confidenceScore: Number.isFinite(Number(idea.confidenceScore)) ? Number(idea.confidenceScore) : idea.potentialScore,
+    whyThisWorks: idea.whyThisWorks || idea.whyThisIdea,
   };
 }
 
