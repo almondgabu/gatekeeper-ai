@@ -18,6 +18,7 @@ import {
   Video,
 } from "lucide-react";
 import ProductionWorkspaceShell from "@/components/production-studio/ProductionWorkspaceShell";
+import ProductionProjectCard from "@/components/production-studio/ProductionProjectCard";
 import WorkflowNavigator from "@/components/production-studio/WorkflowNavigator";
 import {
   AI_DIRECTOR_FIXTURE_FLAG,
@@ -25,7 +26,7 @@ import {
   isLocalFixtureHost,
 } from "@/lib/fixtures/aiDirectorFixture";
 import { createWorkspaceFromIdea } from "@/lib/production-studio/createWorkspaceFromIdea";
-import { saveProductionWorkspace } from "@/lib/production-studio/workspaceStorage";
+import { listProductionWorkspaces, saveProductionWorkspace } from "@/lib/production-studio/workspaceStorage";
 import { type ProductionWorkspaceProject } from "@/types/production-studio";
 
 type ContentTypeOption = {
@@ -127,6 +128,8 @@ type SavedHistoryItem = {
     imageName?: string;
   };
 };
+
+type AutosaveState = "saving" | "saved" | "idle" | "error";
 
 const contentTypes: ContentTypeOption[] = [
   { value: "normal-post", label: "Normal Post" },
@@ -383,6 +386,62 @@ function formatSavedDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+function formatRelativeLastSaved(value: string | null) {
+  if (!value) {
+    return "Not saved yet";
+  }
+
+  const savedAt = new Date(value).getTime();
+
+  if (Number.isNaN(savedAt)) {
+    return "Not saved yet";
+  }
+
+  const diffMs = Date.now() - savedAt;
+  const seconds = Math.floor(diffMs / 1000);
+  const minutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(diffMs / 3600000);
+
+  if (seconds < 10) {
+    return "just now";
+  }
+
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+
+  return new Date(value).toLocaleString();
+}
+
+function normalizeProductionProject(project: ProductionWorkspaceProject): ProductionWorkspaceProject {
+  const now = new Date().toISOString();
+  const sceneCount = Number.isFinite(Number(project.sceneCount))
+    ? Number(project.sceneCount)
+    : project.sourceMetadata?.ideaType === "short_video" || project.sourceMetadata?.bestFormat === "Reel / Video"
+      ? 5
+      : undefined;
+
+  return {
+    ...project,
+    projectKind: "production_project",
+    productionStatus: project.productionStatus ?? "Planning",
+    category: project.category ?? (project.sourceMetadata?.bestFormat === "Reel / Video" ? "Video / Reel" : "Normal Post"),
+    thumbnailPlaceholder: project.thumbnailPlaceholder ?? project.sourceMetadata?.thumbnailPrompt,
+    sceneCount,
+    version: project.version ?? 1,
+    lastModifiedAt: project.lastModifiedAt ?? project.updatedAt ?? now,
+    updatedAt: project.updatedAt ?? now,
+  };
+}
+
 function getSceneDurationBadge(duration: string) {
   return duration.replace("seconds", "sec").replace("second", "sec");
 }
@@ -523,6 +582,7 @@ function getNormalPostVisualConcept(idea: InspirationIdea, selectedPlatform: str
 
 export default function ContentStudioPage() {
   const hasAppliedOpportunityPrefill = useRef(false);
+  const autosaveTimerRef = useRef<number | null>(null);
   const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("inspiration");
   const [contentType, setContentType] = useState("normal-post");
   const [platform, setPlatform] = useState("facebook");
@@ -553,11 +613,17 @@ export default function ContentStudioPage() {
   const [ideaPages, setIdeaPages] = useState<InspirationIdea[][]>([]);
   const [ideaPageIndex, setIdeaPageIndex] = useState(0);
   const [savedItems, setSavedItems] = useState<SavedHistoryItem[]>([]);
+  const [productionProjects, setProductionProjects] = useState<ProductionWorkspaceProject[]>([]);
   const [activeProductionWorkspace, setActiveProductionWorkspace] = useState<ProductionWorkspaceProject | null>(null);
+  const [autosaveState, setAutosaveState] = useState<AutosaveState>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [saveTicker, setSaveTicker] = useState(0);
+  const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [loadedOpportunityTitle, setLoadedOpportunityTitle] = useState<string | null>(null);
 
   useEffect(() => {
     setSavedItems(readSavedHistory());
+    setProductionProjects(listProductionWorkspaces().map(normalizeProductionProject));
   }, []);
 
   useEffect(() => {
@@ -624,7 +690,9 @@ export default function ContentStudioPage() {
     }
 
     const fixtureState = createAiDirectorFixtureState(searchParams);
-    setActiveProductionWorkspace(fixtureState.workspace);
+    const normalizedFixtureWorkspace = normalizeProductionProject(fixtureState.workspace);
+
+    setActiveProductionWorkspace(normalizedFixtureWorkspace);
     setIdeaWorkflow(fixtureState.workflow);
     setIdeaType(fixtureState.ideaType);
     setContentType(fixtureState.contentType);
@@ -639,7 +707,27 @@ export default function ContentStudioPage() {
     setIdeaPageIndex(0);
     setCopiedKey(null);
     setMode("create-content");
+    setAutosaveState("saved");
+    setLastSavedAt(normalizedFixtureWorkspace.updatedAt);
     setError(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current !== null) {
+        window.clearTimeout(autosaveTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setSaveTicker((current) => current + 1);
+    }, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   const requestPayload = useMemo(
@@ -684,6 +772,7 @@ export default function ContentStudioPage() {
   );
 
   const visibleIdeas = ideaPages[ideaPageIndex] ?? [];
+  const autosaveLastSavedLabel = useMemo(() => formatRelativeLastSaved(lastSavedAt), [lastSavedAt, saveTicker]);
   const recommendedIdeaIndex = useMemo(() => {
     if (visibleIdeas.length === 0) {
       return -1;
@@ -704,6 +793,12 @@ export default function ContentStudioPage() {
   }, [visibleIdeas]);
   const canGoToPreviousIdeas = ideaPageIndex > 0;
   const canGoToNextIdeas = ideaPageIndex < ideaPages.length - 1;
+  const savedProductionProjects = useMemo(
+    () => productionProjects
+      .filter((project) => project.sourceMetadata?.ideaType === "short_video" || project.sourceMetadata?.bestFormat === "Reel / Video")
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()),
+    [productionProjects],
+  );
 
   async function generateContent() {
     if (!topic.trim()) {
@@ -1147,6 +1242,9 @@ export default function ContentStudioPage() {
 
   function loadSavedItem(item: SavedHistoryItem) {
     if (item.kind === "content-package" && item.package) {
+      setActiveProductionWorkspace(null);
+      setAutosaveState("idle");
+      setLastSavedAt(null);
       setMode("create-content");
       setGeneratedPackage(item.package);
       setTopic(item.context?.topic ?? "");
@@ -1168,6 +1266,9 @@ export default function ContentStudioPage() {
     }
 
     if (item.kind === "idea-card" && item.idea) {
+      setActiveProductionWorkspace(null);
+      setAutosaveState("idle");
+      setLastSavedAt(null);
       setMode("inspiration");
       setIdeaPages([[item.idea]]);
       setIdeaPageIndex(0);
@@ -1183,23 +1284,71 @@ export default function ContentStudioPage() {
   }
 
   function handleProductionWorkspaceChange(updatedProject: ProductionWorkspaceProject) {
-    const nextProject = {
+    const now = new Date().toISOString();
+    const nextProject = normalizeProductionProject({
       ...updatedProject,
-      updatedAt: new Date().toISOString(),
-    };
+      updatedAt: now,
+      lastModifiedAt: now,
+    });
 
     setActiveProductionWorkspace(nextProject);
-    saveProductionWorkspace(nextProject);
+    setAutosaveState("saving");
+
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current);
+    }
+
+    autosaveTimerRef.current = window.setTimeout(() => {
+      try {
+        saveProductionWorkspace(nextProject);
+        setProductionProjects(listProductionWorkspaces().map(normalizeProductionProject));
+        setLastSavedAt(nextProject.updatedAt);
+        setAutosaveState("saved");
+      } catch {
+        setAutosaveState("error");
+      }
+    }, 450);
+  }
+
+  function openProductionProject(projectId: string) {
+    const foundProject = listProductionWorkspaces().find((entry) => entry.id === projectId);
+
+    if (!foundProject) {
+      setError("Could not load the selected production project.");
+      setOpeningProjectId(null);
+      return;
+    }
+
+    const normalizedProject = normalizeProductionProject(foundProject);
+
+    setOpeningProjectId(projectId);
+    window.setTimeout(() => {
+      setActiveProductionWorkspace(normalizedProject);
+      setMode("create-content");
+      setGeneratedPackage(null);
+      setIdeaPages([]);
+      setIdeaPageIndex(0);
+      setIdeaWorkflow("video-reel");
+      setIdeaType("short_video");
+      setContentType("reel-video");
+      setAutosaveState("saved");
+      setLastSavedAt(normalizedProject.updatedAt);
+      setError(null);
+      setOpeningProjectId(null);
+    }, 300);
   }
 
   function useIdea(idea: InspirationIdea) {
     const nextWorkflow = mapIdeaTypeToWorkflow(idea.ideaType ?? "social_post");
-    const workspace = createWorkspaceFromIdea(
+    const workspace = normalizeProductionProject(createWorkspaceFromIdea(
       mapInspirationIdeaToWorkspaceIdea(idea, platform, ideaGoal, tone, storyStyle),
-    );
+    ));
 
     saveProductionWorkspace(workspace);
+    setProductionProjects(listProductionWorkspaces().map(normalizeProductionProject));
     setActiveProductionWorkspace(workspace);
+    setAutosaveState("saved");
+    setLastSavedAt(workspace.updatedAt);
     setIdeaWorkflow(nextWorkflow);
     setIdeaType(mapWorkflowToIdeaType(nextWorkflow));
     setTopic(`${idea.title}: ${getIdeaSummary(idea)}`);
@@ -1251,6 +1400,13 @@ export default function ContentStudioPage() {
     (
       activeProductionWorkspace?.sourceMetadata?.ideaType === "social_post" ||
       activeProductionWorkspace?.sourceMetadata?.bestFormat === "Normal Post"
+    );
+  const isVideoReelWorkspaceActive =
+    mode === "create-content" &&
+    Boolean(activeProductionWorkspace) &&
+    (
+      activeProductionWorkspace?.sourceMetadata?.ideaType === "short_video" ||
+      activeProductionWorkspace?.sourceMetadata?.bestFormat === "Reel / Video"
     );
   const workflowStep2Title = activeWorkflow === "normal-post"
     ? "📝 Post Workspace"
@@ -1318,6 +1474,7 @@ export default function ContentStudioPage() {
       </section>
 
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.1fr)]">
+        {!isVideoReelWorkspaceActive ? (
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
           {mode === "create-content" ? (
             isNormalPostWorkspaceActive ? (
@@ -1667,8 +1824,18 @@ export default function ContentStudioPage() {
             )}
           </div>
         </section>
+        ) : null}
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
+        <section className={`rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8 ${isVideoReelWorkspaceActive ? "xl:col-span-2" : ""}`}>
+          {isVideoReelWorkspaceActive && activeProductionWorkspace ? (
+            <ProductionWorkspaceShell
+              project={activeProductionWorkspace}
+              onChange={handleProductionWorkspaceChange}
+              autosaveState={autosaveState}
+              lastSavedLabel={autosaveLastSavedLabel}
+            />
+          ) : (
+          <>
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="flex items-center gap-3">
@@ -1731,6 +1898,8 @@ export default function ContentStudioPage() {
                 <ProductionWorkspaceShell
                   project={activeProductionWorkspace}
                   onChange={handleProductionWorkspaceChange}
+                  autosaveState={autosaveState}
+                  lastSavedLabel={autosaveLastSavedLabel}
                 />
               </div>
             ) : !generatedPackage ? (
@@ -2110,12 +2279,29 @@ export default function ContentStudioPage() {
                 </div>
               </div>
             )
-          ) : savedItems.length === 0 ? (
+          ) : savedItems.length === 0 && savedProductionProjects.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
               Save a generated production package or idea card to build local history in this browser.
             </div>
           ) : (
             <div className="mt-6 grid gap-4">
+              {openingProjectId ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm text-slate-300">
+                  <p className="font-medium text-slate-200">Opening Production Project</p>
+                  <p className="mt-1 text-xs text-slate-500">Preparing AI Director Studio...</p>
+                </div>
+              ) : null}
+
+              {savedProductionProjects.map((project) => (
+                <ProductionProjectCard
+                  key={project.id}
+                  project={project}
+                  onOpen={openProductionProject}
+                  formatLastModified={formatSavedDate}
+                  isOpening={openingProjectId === project.id}
+                />
+              ))}
+
               {savedItems.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -2149,6 +2335,8 @@ export default function ContentStudioPage() {
                 </div>
               ))}
             </div>
+          )}
+          </>
           )}
         </section>
       </div>
