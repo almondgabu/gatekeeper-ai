@@ -56,7 +56,7 @@ type Conversation = {
   messageCount?: number;
 };
 
-type Project = {
+type ProjectOption = {
   id: string;
   name: string;
 };
@@ -97,7 +97,7 @@ function ChatPageContent() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProjectName, setActiveProjectName] = useState<string | null>(null);
@@ -328,7 +328,7 @@ function ChatPageContent() {
       return;
     }
 
-    setProjects((result.projects ?? []) as Project[]);
+    setProjects((result.projects ?? []) as ProjectOption[]);
   }
 
   async function loadMessages(conversationId: number) {

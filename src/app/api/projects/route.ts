@@ -1,16 +1,23 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+type ProjectSummary = {
+  id: string;
+  name: string;
+  created_at?: string;
+  updated_at?: string | null;
+  documentCount: number;
+  conversationCount?: number;
+  memoryCount?: number;
+};
+
+type ProjectScopedRow = {
+  project_id: string | null;
+};
+
 export const runtime = "nodejs";
 
 const TEMP_CONFIRMATION_PASSWORD = "782185";
-
-type ProjectRow = {
-  id: string;
-  name: string;
-  created_at: string;
-  updated_at?: string | null;
-};
 
 type DocumentRow = {
   id: string;
@@ -22,7 +29,7 @@ type DocumentRow = {
   project_id?: string | null;
 };
 
-function countDocumentsByProject(documents: Array<{ project_id: string | null }>) {
+function countDocumentsByProject(documents: ProjectScopedRow[]) {
   const counts = new Map<string, number>();
 
   for (const document of documents) {
@@ -34,7 +41,7 @@ function countDocumentsByProject(documents: Array<{ project_id: string | null }>
   return counts;
 }
 
-function countRowsByProject(rows: Array<{ project_id: string | null }>) {
+function countRowsByProject(rows: ProjectScopedRow[]) {
   const counts = new Map<string, number>();
 
   for (const row of rows) {
@@ -55,7 +62,7 @@ export async function GET(request: Request) {
   if (projectId) {
     const { data: project, error: projectError } = await supabaseAdmin
       .from("projects")
-      .select("id, name, created_at")
+      .select("id, name, created_at, updated_at")
       .eq("id", projectId)
       .single();
 
@@ -75,7 +82,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       project: {
-        ...(project as ProjectRow),
+        ...(project as ProjectSummary),
         documentCount: (documents ?? []).length,
       },
       documents: includeDocuments ? ((documents ?? []) as DocumentRow[]) : undefined,
@@ -89,7 +96,7 @@ export async function GET(request: Request) {
     { data: memories, error: memoriesError },
   ] =
     await Promise.all([
-      supabaseAdmin.from("projects").select("id, name, created_at").order("created_at", { ascending: false }),
+      supabaseAdmin.from("projects").select("id, name, created_at, updated_at").order("created_at", { ascending: false }),
       supabaseAdmin.from("documents").select("project_id"),
       supabaseAdmin.from("conversations").select("project_id"),
       supabaseAdmin.from("project_memories").select("project_id"),
@@ -111,13 +118,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: memoriesError.message }, { status: 500 });
   }
 
-  const documentCounts = countDocumentsByProject((documents ?? []) as Array<{ project_id: string | null }>);
-  const conversationCounts = countRowsByProject((conversations ?? []) as Array<{ project_id: string | null }>);
-  const memoryCounts = countRowsByProject((memories ?? []) as Array<{ project_id: string | null }>);
+  const documentCounts = countDocumentsByProject((documents ?? []) as ProjectScopedRow[]);
+  const conversationCounts = countRowsByProject((conversations ?? []) as ProjectScopedRow[]);
+  const memoryCounts = countRowsByProject((memories ?? []) as ProjectScopedRow[]);
 
   return NextResponse.json({
     projects: (projects ?? []).map((project) => ({
-      ...(project as ProjectRow),
+      ...(project as ProjectSummary),
       documentCount: documentCounts.get(project.id as string) ?? 0,
       conversationCount: conversationCounts.get(project.id as string) ?? 0,
       memoryCount: memoryCounts.get(project.id as string) ?? 0,
@@ -136,7 +143,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabaseAdmin
     .from("projects")
     .insert([{ name }])
-    .select("id, name, created_at")
+    .select("id, name, created_at, updated_at")
     .single();
 
   if (error || !data) {
@@ -145,7 +152,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     project: {
-      ...(data as ProjectRow),
+      ...(data as ProjectSummary),
       documentCount: 0,
     },
   });
@@ -169,7 +176,7 @@ export async function PATCH(request: Request) {
     .from("projects")
     .update({ name })
     .eq("id", projectId)
-    .select("id, name, created_at")
+    .select("id, name, created_at, updated_at")
     .single();
 
   if (error || !data) {
@@ -187,7 +194,7 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({
     project: {
-      ...(data as ProjectRow),
+      ...(data as ProjectSummary),
       documentCount: count ?? 0,
     },
   });

@@ -9,9 +9,12 @@ import {
   Library,
   BookOpen,
   Clapperboard,
+  Radar,
   Settings,
   Shield,
   Plus,
+  GraduationCap,
+  Film,
 } from "lucide-react";
 
 import Link from "next/link";
@@ -38,6 +41,7 @@ const sidebarContextRules: Array<{
   { pattern: /^\/vault(\/|$)/, context: "recent-documents" },
   { pattern: /^\/opportunities(\/|$)/, context: "recent-opportunities" },
   { pattern: /^\/content-studio(\/|$)/, context: "recent-ideas" },
+  { pattern: /^\/viral-scanner(\/|$)/, context: "recent-analyses" },
   { pattern: /^\/post-workspace(\/|$)/, context: "recent-posts" },
   { pattern: /^\/director-studio(\/|$)/, context: "recent-storyboards" },
   { pattern: /^\/content-intelligence(\/|$)/, context: "recent-analyses" },
@@ -78,6 +82,9 @@ const menuItems = [
   { name: "Knowledge Vault", href: "/vault", icon: Library },
   // TODO (Phase 1.1): Add "NEW" badge beside AI Idea Explorer navigation item.
   { name: "AI Idea Explorer", href: "/content-studio", icon: Clapperboard },
+  { name: "Viral Scanner", href: "/viral-scanner", icon: Radar },
+  { name: "Production Studio", href: "/production-studio", icon: Film },
+  { name: "🎓 Gatekeeper Academy", href: "/academy", icon: GraduationCap },
   { name: "User Guide", href: "/guide", icon: BookOpen },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
@@ -148,24 +155,26 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
  {menuItems.map((item) => {
   const isActive = pathname === item.href;
   const Icon = item.icon;
+  const showDivider = item.href === "/academy";
 
   return (
-    <Link
-      key={item.href}
-      href={item.href}
-      className={`group flex items-center ${
-        collapsed ? "justify-center" : "gap-3"
-      } px-3 py-2.5 rounded-xl transition-all duration-200 ${
-        isActive
-          ? "bg-gradient-to-r from-yellow-500/20 to-yellow-600/10 text-yellow-300 border border-yellow-500/20"
-          : "text-slate-300 hover:bg-slate-800/60"
-      }`}
-      onClick={() => onNavigate?.()}
-    >
-      <Icon size={18} />
+    <div key={item.href} className={showDivider ? "mt-3 border-t border-slate-800 pt-3" : ""}>
+      <Link
+        href={item.href}
+        className={`group flex items-center ${
+          collapsed ? "justify-center" : "gap-3"
+        } px-3 py-2.5 rounded-xl transition-all duration-200 ${
+          isActive
+            ? "bg-gradient-to-r from-yellow-500/20 to-yellow-600/10 text-yellow-300 border border-yellow-500/20"
+            : "text-slate-300 hover:bg-slate-800/60"
+        }`}
+        onClick={() => onNavigate?.()}
+      >
+        <Icon size={18} />
 
-      {!collapsed && <span>{item.name}</span>}
-    </Link>
+        {!collapsed && <span>{item.name}</span>}
+      </Link>
+    </div>
   );
 })}
 

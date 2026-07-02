@@ -28,7 +28,10 @@ type ProjectRecord = {
   id: string;
   name: string;
   created_at?: string;
+  updated_at?: string | null;
   documentCount: number;
+  conversationCount?: number;
+  memoryCount?: number;
 };
 
 type ProjectDocument = {

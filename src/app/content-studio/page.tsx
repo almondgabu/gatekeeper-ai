@@ -1,6 +1,7 @@
 "use client";
 
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ClipboardList,
   Clapperboard,
@@ -26,7 +27,8 @@ import {
   isLocalFixtureHost,
 } from "@/lib/fixtures/aiDirectorFixture";
 import { createWorkspaceFromIdea } from "@/lib/production-studio/createWorkspaceFromIdea";
-import { listProductionWorkspaces, saveProductionWorkspace } from "@/lib/production-studio/workspaceStorage";
+import { deleteProductionWorkspace, listProductionWorkspaces, saveProductionWorkspace } from "@/lib/production-studio/workspaceStorage";
+import { loadWorkflowBridgeRecord, saveWorkflowBridgeRecord } from "@/lib/workflowBridge";
 import { type ProductionWorkspaceProject } from "@/types/production-studio";
 
 type ContentTypeOption = {
@@ -504,6 +506,15 @@ function mapIdeaBestFormatToContentType(value: InspirationIdea["bestFormat"]) {
   return value === "Reel / Video" ? "reel-video" : "normal-post";
 }
 
+function normalizeIdeaText(value: unknown, fallback = "") {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
 type MapperIdea = Parameters<typeof createWorkspaceFromIdea>[0];
 
 function mapInspirationIdeaToWorkspaceIdea(
@@ -513,13 +524,17 @@ function mapInspirationIdeaToWorkspaceIdea(
   selectedTone: string,
   selectedStoryStyle: string,
 ): MapperIdea {
+  const safeTitle = normalizeIdeaText(idea.title, "Untitled Idea");
+  const safeSummary = normalizeIdeaText(idea.summary);
+  const safeWhyThisIdea = normalizeIdeaText(idea.whyThisIdea);
+
   return {
-    title: idea.title,
-    hook: idea.summary || idea.title,
-    coreConcept: idea.summary || idea.whyThisIdea || idea.title,
+    title: safeTitle,
+    hook: safeSummary || safeTitle,
+    coreConcept: safeSummary || safeWhyThisIdea || safeTitle,
     ideaType: idea.ideaType ?? "social_post",
     bestFormat: idea.bestFormat,
-    targetAudience: idea.targetAudience || "General audience",
+    targetAudience: normalizeIdeaText(idea.targetAudience, "General audience"),
     emotion: "Trust",
     platform: selectedPlatform,
     inheritedGoal: getGoalLabel(selectedGoal),
@@ -530,13 +545,13 @@ function mapInspirationIdeaToWorkspaceIdea(
       ? Number(idea.engagementPotential)
       : idea.potentialScore,
     difficulty: idea.difficulty,
-    productionTime: idea.productionTime || idea.estimatedProductionTime,
+    productionTime: normalizeIdeaText(idea.productionTime) || normalizeIdeaText(idea.estimatedProductionTime, "15-30 minutes"),
     suggestedCTA: `Encourage action for ${getGoalLabel(selectedGoal).toLowerCase()}`,
-    thumbnailPrompt: `Thumbnail concept for: ${idea.title}`,
-    keyVisualPrompt: idea.keyVisualPrompt || `Key visual concept for: ${idea.title}`,
-    animationPrompt: `Motion concept for: ${idea.title}`,
+    thumbnailPrompt: `Thumbnail concept for: ${safeTitle}`,
+    keyVisualPrompt: normalizeIdeaText(idea.keyVisualPrompt, `Key visual concept for: ${safeTitle}`),
+    animationPrompt: `Motion concept for: ${safeTitle}`,
     confidenceScore: Number.isFinite(Number(idea.confidenceScore)) ? Number(idea.confidenceScore) : idea.potentialScore,
-    whyThisWorks: idea.whyThisWorks || idea.whyThisIdea,
+    whyThisWorks: normalizeIdeaText(idea.whyThisWorks) || safeWhyThisIdea,
   };
 }
 
@@ -581,6 +596,7 @@ function getNormalPostVisualConcept(idea: InspirationIdea, selectedPlatform: str
 }
 
 export default function ContentStudioPage() {
+  const router = useRouter();
   const hasAppliedOpportunityPrefill = useRef(false);
   const autosaveTimerRef = useRef<number | null>(null);
   const [mode, setMode] = useState<"create-content" | "inspiration" | "saved">("inspiration");
@@ -620,10 +636,14 @@ export default function ContentStudioPage() {
   const [saveTicker, setSaveTicker] = useState(0);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [loadedOpportunityTitle, setLoadedOpportunityTitle] = useState<string | null>(null);
+  const [previousCampaignIntelligence, setPreviousCampaignIntelligence] = useState<string>("");
 
   useEffect(() => {
     setSavedItems(readSavedHistory());
     setProductionProjects(listProductionWorkspaces().map(normalizeProductionProject));
+
+    const bridge = loadWorkflowBridgeRecord();
+    setPreviousCampaignIntelligence(bridge?.p6_intelligence?.intelligenceSummary ?? "");
   }, []);
 
   useEffect(() => {
@@ -1237,7 +1257,36 @@ export default function ContentStudioPage() {
   }
 
   function deleteSavedItem(itemId: string) {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("Are you sure you want to delete this saved item?");
+      if (!confirmed) {
+        return;
+      }
+    }
+
     persistSavedItems(savedItems.filter((item) => item.id !== itemId));
+  }
+
+  function deleteSavedProductionProject(projectId: string) {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("Are you sure you want to delete this saved item?");
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    deleteProductionWorkspace(projectId);
+    setProductionProjects(listProductionWorkspaces().map(normalizeProductionProject));
+
+    if (activeProductionWorkspace?.id === projectId) {
+      setActiveProductionWorkspace(null);
+      setAutosaveState("idle");
+      setLastSavedAt(null);
+    }
+
+    if (openingProjectId === projectId) {
+      setOpeningProjectId(null);
+    }
   }
 
   function loadSavedItem(item: SavedHistoryItem) {
@@ -1339,10 +1388,27 @@ export default function ContentStudioPage() {
   }
 
   function useIdea(idea: InspirationIdea) {
+    const nowIso = new Date().toISOString();
     const nextWorkflow = mapIdeaTypeToWorkflow(idea.ideaType ?? "social_post");
     const workspace = normalizeProductionProject(createWorkspaceFromIdea(
       mapInspirationIdeaToWorkspaceIdea(idea, platform, ideaGoal, tone, storyStyle),
     ));
+
+    saveWorkflowBridgeRecord({
+      p1_idea: {
+        creativeBrief: `${idea.title}\n\n${getIdeaSummary(idea)}`,
+        topic: idea.title,
+        objective: getGoalLabel(ideaGoal),
+        audience: idea.targetAudience || "General property audience",
+        platform,
+        language,
+        approvedAt: nowIso,
+        status: "brief-approved",
+      },
+      ideaExplorer: {
+        topic: idea.title,
+      },
+    });
 
     saveProductionWorkspace(workspace);
     setProductionProjects(listProductionWorkspaces().map(normalizeProductionProject));
@@ -1356,6 +1422,62 @@ export default function ContentStudioPage() {
     setGoal(mapExplorerGoalToStudioGoal(ideaGoal));
     setMode("create-content");
     setError(null);
+  }
+
+  function sendToViralScanner() {
+    if (!generatedPackage) {
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const resolvedHook = getIdeaSummary({
+      title: generatedPackage.title,
+      summary: generatedPackage.caption ?? generatedPackage.title,
+      bestFormat: "Normal Post",
+      potentialScore: 70,
+      difficulty: "Medium",
+      estimatedProductionTime: "Standard",
+      whyThisIdea: "",
+    });
+
+    saveWorkflowBridgeRecord({
+      clearFields: ["viralScanner"],
+      clearMilestones: ["p3_viralReview", "p4_production", "p5_publishing"],
+      p2_content: {
+        title: generatedPackage.title,
+        hook: resolvedHook,
+        caption: generatedPackage.caption ?? "",
+        cta: generatedPackage.cta ?? "",
+        hashtags: generatedPackage.hashtags ?? "",
+        platform: generatedPackage.platform,
+        approvedAt: nowIso,
+        status: "content-ready",
+      },
+      contentCreator: {
+        caption: generatedPackage.caption ?? "",
+        targetPlatform: generatedPackage.platform,
+      },
+      contentStudio: {
+        title: generatedPackage.title,
+        summary: formatPackageForCopy(generatedPackage),
+        contentType: generatedPackage.contentType,
+        platform: generatedPackage.platform,
+        topic: topic.trim(),
+        tone,
+        language,
+        goal,
+        storyStyle,
+        presentationStyle,
+        durationSeconds,
+        sceneCount,
+        productionLevel,
+        caption: generatedPackage.caption ?? "",
+        cta: generatedPackage.cta ?? "",
+        hashtags: generatedPackage.hashtags ?? "",
+      },
+    });
+
+    router.push("/viral-scanner");
   }
 
   function getIdeaSummary(idea: InspirationIdea | (Record<string, unknown> & InspirationIdea)) {
@@ -1424,7 +1546,7 @@ export default function ContentStudioPage() {
   );
 
   return (
-    <div className="min-h-screen w-full px-6 py-8 text-white md:px-10 md:py-10">
+    <div className="min-h-screen w-full overflow-x-hidden px-6 py-8 text-white md:px-10 md:py-10">
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6 md:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
@@ -1471,10 +1593,18 @@ export default function ContentStudioPage() {
             Loaded from opportunity: <span className="font-semibold text-white">{loadedOpportunityTitle}</span>
           </div>
         ) : null}
+
+        {mode === "inspiration" && previousCampaignIntelligence ? (
+          <div className="mt-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-5 py-4 text-sm text-cyan-100">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">Previous Campaign Intelligence</p>
+            <p className="mt-2 whitespace-pre-wrap break-words">{previousCampaignIntelligence}</p>
+            <p className="mt-2 text-xs uppercase tracking-[0.14em] text-cyan-200/90">Read-only context for your next creative brief.</p>
+          </div>
+        ) : null}
       </section>
 
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.1fr)]">
-        {!isVideoReelWorkspaceActive ? (
+        {!isVideoReelWorkspaceActive && !isNormalPostWorkspaceActive ? (
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8">
           {mode === "create-content" ? (
             isNormalPostWorkspaceActive ? (
@@ -1826,8 +1956,8 @@ export default function ContentStudioPage() {
         </section>
         ) : null}
 
-        <section className={`rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8 ${isVideoReelWorkspaceActive ? "xl:col-span-2" : ""}`}>
-          {isVideoReelWorkspaceActive && activeProductionWorkspace ? (
+        <section className={`rounded-2xl border border-slate-800 bg-slate-900 p-6 md:p-8 ${(isVideoReelWorkspaceActive || isNormalPostWorkspaceActive) ? "xl:col-span-2" : ""}`}>
+          {(isVideoReelWorkspaceActive || isNormalPostWorkspaceActive) && activeProductionWorkspace ? (
             <ProductionWorkspaceShell
               project={activeProductionWorkspace}
               onChange={handleProductionWorkspaceChange}
@@ -1880,15 +2010,32 @@ export default function ContentStudioPage() {
             </div>
 
             {mode === "create-content" && !isNormalPostWorkspaceActive ? (
-              <button
-                type="button"
-                onClick={copyOutput}
-                disabled={!generatedPackage}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 max-md:w-full"
-              >
-                <Copy size={16} />
-                {copiedKey === "package" ? "Copied" : "Copy Entire Production Package"}
-              </button>
+              <div className="flex w-full flex-wrap gap-3 md:w-auto">
+                <button
+                  type="button"
+                  onClick={copyOutput}
+                  disabled={!generatedPackage}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-yellow-500/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 max-md:w-full"
+                >
+                  <Copy size={16} />
+                  {copiedKey === "package" ? "Copied" : "Copy Entire Production Package"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={sendToViralScanner}
+                  disabled={!generatedPackage}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-cyan-300/60 max-md:w-full"
+                >
+                  <Sparkles size={16} />
+                  Continue to Viral Scanner
+                </button>
+                {generatedPackage ? (
+                  <p className="w-full text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200 md:text-right">
+                    ✓ CONTENT PACKAGE READY
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
 
@@ -2229,7 +2376,7 @@ export default function ContentStudioPage() {
                           className="inline-flex items-center gap-2 rounded-xl bg-yellow-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-yellow-400"
                         >
                           <Sparkles size={16} />
-                          Use This Idea
+                          ✓ CREATIVE BRIEF APPROVED · Continue to Content Creator
                         </button>
 
                         <button
@@ -2297,6 +2444,7 @@ export default function ContentStudioPage() {
                   key={project.id}
                   project={project}
                   onOpen={openProductionProject}
+                  onDelete={deleteSavedProductionProject}
                   formatLastModified={formatSavedDate}
                   isOpening={openingProjectId === project.id}
                 />

@@ -30,7 +30,7 @@ export default function MobileShell({
   // Mobile drawer does not mount extra body-level debug elements in production
 
   return (
-    <div className="flex min-h-screen h-screen w-full overflow-x-hidden overflow-y-hidden bg-[#020617] text-white">
+    <div className="flex min-h-screen w-full overflow-x-hidden bg-[#020617] text-white md:h-screen md:overflow-y-hidden">
       {/* Desktop Sidebar */}
       <div className="hidden h-full min-h-0 md:block">
         <Sidebar />
@@ -74,7 +74,7 @@ export default function MobileShell({
       )}
 
       {/* Main Content */}
-      <main className="h-full min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#020617] pt-12 text-white md:pt-0">
+      <main className="min-h-screen min-w-0 flex-1 overflow-x-hidden overflow-y-visible bg-[#020617] pt-12 text-white md:h-full md:min-h-0 md:overflow-y-auto md:pt-0">
         {children}
       </main>
     </div>

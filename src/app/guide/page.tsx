@@ -43,11 +43,13 @@ const completedRoadmap = [
   "Project Tasks",
 ];
 
-const futureIdeas = [
-  "Cross-project search",
-  "Gmail and Google Drive integration",
-  "WhatsApp import",
-  "Advanced automation and workflows",
+const lockedModuleRoadmap = [
+  { name: "AI Idea Explorer", status: "Completed" },
+  { name: "Content Creator v1.0", status: "Completed" },
+  { name: "Viral Scanner v1.0", status: "Current Sprint" },
+  { name: "AI Production Studio", status: "Locked Next" },
+  { name: "Publishing", status: "Locked Next" },
+  { name: "AI Content Intelligence", status: "Locked Next" },
 ];
 
 export default function GuidePage() {
@@ -199,7 +201,7 @@ export default function GuidePage() {
             </ul>
           </GuideCard>
 
-          <GuideCard id="roadmap" icon={<Rocket className="text-yellow-400" size={22} />} title="Roadmap / Future Ideas">
+          <GuideCard id="roadmap" icon={<Rocket className="text-yellow-400" size={22} />} title="Roadmap">
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
                 <h3 className="text-lg font-semibold text-white">Completed</h3>
@@ -214,12 +216,17 @@ export default function GuidePage() {
               </div>
 
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-                <h3 className="text-lg font-semibold text-white">Future Ideas</h3>
+                <h3 className="text-lg font-semibold text-white">Locked Module Sequence</h3>
                 <ul className="mt-4 space-y-3 text-slate-300">
-                  {futureIdeas.map((item) => (
-                    <li key={item} className="flex items-center gap-3">
-                      <Rocket size={16} className="text-yellow-400" />
-                      {item}
+                  {lockedModuleRoadmap.map((item) => (
+                    <li key={item.name} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2">
+                      <span className="flex items-center gap-3">
+                        <Rocket size={16} className="text-yellow-400" />
+                        {item.name}
+                      </span>
+                      <span className="rounded-full border border-slate-700 px-2.5 py-0.5 text-[11px] uppercase tracking-[0.14em] text-slate-300">
+                        {item.status}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -227,12 +234,12 @@ export default function GuidePage() {
             </div>
 
             <div className="mt-6 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-5">
-              <h3 className="text-lg font-semibold text-yellow-200">Should We Build This?</h3>
+              <h3 className="text-lg font-semibold text-yellow-200">Roadmap Rule</h3>
               <p className="mt-3 text-slate-300">
-                New features should be added only after real usage shows they are needed. The goal is to solve real workflow pain, not to accumulate shiny options that create complexity without improving outcomes.
+                Do not reorder this roadmap. Viral Scanner v1.0 is the current module and its Sprint 1 objective is to establish locked foundations, documentation, and a UX-ready frontend scaffold.
               </p>
               <p className="mt-3 text-slate-300">
-                If a future idea does not clearly improve daily usage, retrieval quality, or operational clarity, it should probably wait.
+                Do not add extra modules outside this sequence in the current phase.
               </p>
             </div>
           </GuideCard>

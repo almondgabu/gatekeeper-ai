@@ -1,15 +1,16 @@
-import { Clapperboard, Clock3, Layers3, PlayCircle } from "lucide-react";
+import { Clapperboard, Clock3, Layers3, PlayCircle, Trash2 } from "lucide-react";
 import { ProductionWorkspaceProject } from "@/types/production-studio";
 import { type ReactNode } from "react";
 
 type ProductionProjectCardProps = {
   project: ProductionWorkspaceProject;
   onOpen: (projectId: string) => void;
+  onDelete: (projectId: string) => void;
   formatLastModified: (value: string) => string;
   isOpening?: boolean;
 };
 
-export default function ProductionProjectCard({ project, onOpen, formatLastModified, isOpening = false }: ProductionProjectCardProps) {
+export default function ProductionProjectCard({ project, onOpen, onDelete, formatLastModified, isOpening = false }: ProductionProjectCardProps) {
   const sourcePlatform = project.sourceMetadata?.platform || "facebook";
   const status = project.productionStatus || "Planning";
   const sceneCount = Number.isFinite(Number(project.sceneCount)) ? Number(project.sceneCount) : 5;
@@ -49,6 +50,14 @@ export default function ProductionProjectCard({ project, onOpen, formatLastModif
                 <PlayCircle size={16} />
                 {isOpening ? "Opening..." : "Open Project"}
               </button>
+              <button
+                type="button"
+                onClick={() => onDelete(project.id)}
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-red-500/40 hover:text-white"
+              >
+                <Trash2 size={16} />
+                Delete
+              </button>
             </div>
           </div>
 
@@ -80,7 +89,7 @@ function CardField({ label, value }: { label: string; value: ReactNode }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const normalized = status.toLowerCase();
+  const normalized = (status || "Planning").toLowerCase();
   const tone = normalized === "active"
     ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-200"
     : normalized === "archived"

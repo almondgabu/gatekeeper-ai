@@ -136,6 +136,38 @@ and one UI consumer:
 
 - `src/app/page.tsx`
 
+## 3A. AI Model And Provider Configuration
+
+Gatekeeper AI now centralizes AI model configuration and provider abstraction so rendering engines can be swapped without changing Production Studio UI or workflow.
+
+Current model configuration lives in:
+
+- `src/lib/ai/modelConfig.ts`
+
+Current model map:
+
+- Chat: `gpt-5.5`
+- Image: `gpt-image-2`
+- Video Draft: `sora-2`
+- Video Production: `sora-2-pro`
+
+Provider abstraction lives in:
+
+- `src/lib/ai/providers.ts`
+
+Current provider registry:
+
+- Image Provider: GPT Image 2
+- Video Provider (Recommended): Google Flow (manual external render)
+- Video Provider (Draft): Sora 2
+- Video Provider (Production): Sora 2 Pro
+
+Design principle:
+
+- Gatekeeper AI is the Creative Director and orchestration layer.
+- Rendering is performed manually on approved external platforms after prompt handoff.
+- Upgrading models should require changing one configuration surface, not production workflow code.
+
 ## 4. Current Data Flow
 
 High-level flow:

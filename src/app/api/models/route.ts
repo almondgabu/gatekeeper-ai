@@ -1,11 +1,7 @@
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { openai } from "@/lib/embeddings";
 
 export async function GET() {
-  const models = await client.models.list();
+  const models = await openai.models.list();
 
   return Response.json(
     models.data.map((model) => model.id)

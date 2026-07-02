@@ -68,6 +68,7 @@ const allowedIdeaExplorerGoals = new Set([
   "find-sellers",
   "branding",
 ]);
+const allowedIdeaWorkflows = new Set(["normal-post", "video-reel"]);
 const allowedIdeaTypes = new Set(["social_post", "short_video"]);
 const allowedIdeaCounts = new Set([1, 10]);
 const supportedIdeaImageMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -581,7 +582,13 @@ export async function POST(request: Request) {
 
     if (mode === "inspiration" || mode === "inspiration-refresh") {
       const sourceType = normalizeText(body?.sourceType).toLowerCase();
-      const ideaType = normalizeText(body?.ideaType).toLowerCase() || "social_post";
+      const workflow = normalizeText(body?.workflow).toLowerCase();
+      const requestedIdeaType = normalizeText(body?.ideaType).toLowerCase() || "social_post";
+      const ideaType = workflow === "video-reel"
+        ? "short_video"
+        : workflow === "normal-post"
+          ? "social_post"
+          : requestedIdeaType;
       const selectedPlatform = normalizeText(body?.platform) || "Facebook";
       const goal = normalizeText(body?.goal).toLowerCase().replace(/\s+/g, "-");
       const ideaCount = Number(body?.ideaCount ?? (mode === "inspiration-refresh" ? 1 : 10));
@@ -598,6 +605,10 @@ export async function POST(request: Request) {
 
       if (!allowedIdeaExplorerGoals.has(goal)) {
         return NextResponse.json({ error: "Invalid goal" }, { status: 400 });
+      }
+
+      if (workflow && !allowedIdeaWorkflows.has(workflow)) {
+        return NextResponse.json({ error: "Invalid workflow" }, { status: 400 });
       }
 
       if (!allowedIdeaTypes.has(ideaType)) {
@@ -626,6 +637,11 @@ export async function POST(request: Request) {
       const sourceSummary = sourceType === "topic"
         ? `Topic from user: ${topic}`
         : "User uploaded a screenshot/image as the inspiration source. Infer practical context only from visible clues.";
+      const selectedWorkflowLabel = workflow === "video-reel"
+        ? "Video / Reel"
+        : workflow === "normal-post"
+          ? "Normal Post"
+          : "Legacy/Unspecified";
       const selectedIdeaTypeLabel = ideaType === "short_video" ? "Short Video" : "Normal Post";
       const selectedBestFormat = ideaType === "short_video" ? "Reel / Video" : "Normal Post";
       const ideaTypeRules = ideaType === "short_video"
@@ -688,6 +704,7 @@ Return exactly one JSON object in this shape:
 }
 
 Context:
+- Selected Workflow: ${selectedWorkflowLabel}
 - Goal: ${goal}
 - Selected Idea Type: ${selectedIdeaTypeLabel}
 - Source Type: ${sourceType}

@@ -17,7 +17,7 @@ function formatHashtags(tags: string[] | undefined): string {
   }
 
   return tags
-    .map((tag) => tag.trim())
+    .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
     .filter(Boolean)
     .map((tag) => (tag.startsWith("#") ? tag : `#${tag.replace(/\s+/g, "")}`))
     .join(" ");

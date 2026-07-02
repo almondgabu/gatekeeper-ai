@@ -43,6 +43,42 @@ export type ProductionStatus =
   | 'scheduled';
 
 /**
+ * Creative production lifecycle status for AI Director Studio projects
+ */
+export type ProductionLifecycleStatus =
+  | 'Planning'
+  | 'Ready for Images'
+  | 'Images Completed'
+  | 'Ready for Video'
+  | 'Video Completed'
+  | 'Editing'
+  | 'Ready to Publish'
+  | 'Published'
+  | 'Archived';
+
+export type StoryboardSceneStatus =
+  | 'Planning'
+  | 'Ready for Images'
+  | 'Images Completed'
+  | 'Ready for Video'
+  | 'Video Completed'
+  | 'Editing'
+  | 'Completed';
+
+export interface StoryboardSceneDraft {
+  id: string;
+  sceneNumber: number;
+  title: string;
+  purpose: string;
+  estimatedDuration: string;
+  imagePrompt: string;
+  videoPrompt: string;
+  voiceover: string;
+  directorNotes: string;
+  status: StoryboardSceneStatus;
+}
+
+/**
  * Production workspace project structure
  * 
  * Flat schema optimized for local model processing with minimal nesting
@@ -92,6 +128,30 @@ export interface ProductionWorkspaceProject {
   
   /** Last update timestamp */
   updatedAt: string;
+
+  /** Optional alias used by UI surfaces that prefer explicit wording */
+  lastModifiedAt?: string;
+
+  /** Optional project kind marker for local production project cards */
+  projectKind?: 'production_project';
+
+  /** Optional creative production lifecycle status */
+  productionStatus?: ProductionLifecycleStatus;
+
+  /** Optional user-facing category label (for dashboard cards) */
+  category?: string;
+
+  /** Optional thumbnail placeholder/prompt shown in saved cards */
+  thumbnailPlaceholder?: string;
+
+  /** Optional scene count for quick summary cards */
+  sceneCount?: number;
+
+  /** Editable storyboard scene drafts for AI Director Studio */
+  storyboardScenes?: StoryboardSceneDraft[];
+
+  /** Optional version number for local migration and edit tracking */
+  version?: number;
   
   /** Completion timestamp (if applicable) */
   completedAt?: string;
@@ -159,8 +219,13 @@ export interface ProductionWorkspaceProject {
     hook?: string;
     coreConcept?: string;
     whyThisWorks?: string;
+    ideaType?: "social_post" | "short_video";
+    bestFormat?: "Normal Post" | "Reel / Video";
     emotion?: string;
     platform?: string;
+    inheritedGoal?: string;
+    inheritedTone?: string;
+    inheritedStyle?: string;
     estimatedReach?: number;
     engagementPotential?: number;
     difficulty?: "Easy" | "Medium" | "Advanced";
@@ -170,6 +235,10 @@ export interface ProductionWorkspaceProject {
     keyVisualPrompt?: string;
     animationPrompt?: string;
     confidenceScore?: number;
+    postDraft?: string;
+    ctaDraft?: string;
+    hashtagsDraft?: string;
+    imagePrompt?: string;
   };
 }
 
