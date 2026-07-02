@@ -10,6 +10,7 @@ export default function MobileShell({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const currentYear = new Date().getFullYear();
 
   useEffect(() => {
     if (!open) {
@@ -76,6 +77,15 @@ export default function MobileShell({
       {/* Main Content */}
       <main className="min-h-screen min-w-0 flex-1 overflow-x-hidden overflow-y-visible bg-[#020617] pt-12 text-white md:h-full md:min-h-0 md:overflow-y-auto md:pt-0">
         {children}
+        <footer className="mt-8 border-t border-slate-800/80 px-5 py-6 text-xs text-slate-500 md:px-8 lg:px-10">
+          <div className="mx-auto max-w-7xl space-y-1.5">
+            <p className="text-slate-400">Gatekeeper AI Version 1.0</p>
+            <p>Designed &amp; Owned by Almond Gabu</p>
+            <p>Creative Operating System</p>
+            <p>Powered by Next.js, React, TypeScript &amp; OpenAI</p>
+            <p className="pt-1 text-slate-600">© {currentYear} Almond Gabu. All Rights Reserved.</p>
+          </div>
+        </footer>
       </main>
     </div>
   );

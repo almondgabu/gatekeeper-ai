@@ -173,6 +173,23 @@ export default function Home() {
           </div>
         </div>
 
+        <section className="mb-8 rounded-3xl border border-slate-800 bg-slate-900/60 p-5 md:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Product Identity</p>
+              <h3 className="mt-2 text-xl font-semibold text-white">Gatekeeper AI</h3>
+              <p className="mt-1 text-sm text-slate-300">Version 1.0 · Creative Operating System</p>
+              <p className="mt-1 text-sm text-slate-400">Designed &amp; Owned by Almond Gabu</p>
+            </div>
+            <Link
+              href="/about"
+              className="inline-flex rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-2 text-sm text-slate-200 transition hover:border-slate-500"
+            >
+              Learn More
+            </Link>
+          </div>
+        </section>
+
         {errorMessage ? (
           <div className="mb-8 rounded-2xl border border-red-500/30 bg-red-500/10 p-5 text-sm text-red-100">
             <p className="font-semibold">Dashboard unavailable</p>

@@ -15,6 +15,7 @@ import {
   Plus,
   GraduationCap,
   Film,
+  Info,
 } from "lucide-react";
 
 import Link from "next/link";
@@ -85,6 +86,7 @@ const menuItems = [
   { name: "Viral Scanner", href: "/viral-scanner", icon: Radar },
   { name: "Production Studio", href: "/production-studio", icon: Film },
   { name: "🎓 Gatekeeper Academy", href: "/academy", icon: GraduationCap },
+  { name: "About Gatekeeper AI", href: "/about", icon: Info },
   { name: "User Guide", href: "/guide", icon: BookOpen },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
